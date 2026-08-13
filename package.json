@@ -1,0 +1,45 @@
+{
+  "name": "pi-extensions",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Jozsef Gabor Lazar's personal pi coding agent extensions",
+  "type": "module",
+  "workspaces": [
+    "extensions/*"
+  ],
+  "author": "Jozsef Gabor Lazar <me@joelazar.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joelazar/pi-extensions.git"
+  },
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check": "npm run typecheck && npm test"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/anthropic-extra/index.ts",
+      "./extensions/btw/index.ts",
+      "./extensions/commit/index.ts",
+      "./extensions/context/index.ts",
+      "./extensions/cwd-history/index.ts",
+      "./extensions/export-md/index.ts",
+      "./extensions/pr-create/index.ts",
+      "./extensions/rtk/index.ts",
+      "./extensions/sandbox/index.ts",
+      "./extensions/save-md/index.ts",
+      "./extensions/skill-toggle/src/index.ts",
+      "./extensions/spawn/index.ts",
+      "./extensions/split-fork/index.ts",
+      "./extensions/thinking-back/index.ts",
+      "./extensions/web-tools/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-ai": "*"
+  }
+}
