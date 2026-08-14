@@ -17,6 +17,8 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
   Skill,
+  SourceInfo,
+  ToolInfo,
   ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
@@ -293,7 +295,7 @@ function shortenPath(p: string, cwd: string): string {
   const rc = path.resolve(cwd);
   if (rp === rc) return ".";
   if (rp.startsWith(rc + path.sep)) return "./" + rp.slice(rc.length + 1);
-  return rp;
+  return shortenHome(rp);
 }
 
 function shortenHome(p: string): string {
@@ -305,11 +307,153 @@ function shortenHome(p: string): string {
   return rp;
 }
 
-function shortenExtensionPath(p: string): string {
-  if (!p || p === "<unknown>") return p;
-  const dir = path.basename(path.dirname(p));
-  const base = path.basename(p);
-  return dir && dir !== "." ? `${dir}/${base}` : base;
+// Directory names that carry no identity of their own — they're layout, not
+// the extension's name. Used when deriving a stable label from a file path.
+const GENERIC_DIRS = new Set([
+  "src",
+  "dist",
+  "lib",
+  "build",
+  "out",
+  "extensions",
+  "extension",
+  "agent",
+  ".pi",
+  "node_modules",
+]);
+
+/**
+ * Turn an extension/tool source path into a short, human-recognisable name.
+ *
+ * Synthetic paths (`<builtin:read>`, `<inline:llama.cpp>`) keep their inner
+ * label. Real paths collapse to the nearest meaningful directory so that
+ * `.../web-tools/index.ts` and `.../skill-toggle/src/index.ts` become
+ * `web-tools` and `skill-toggle` instead of two identical `index.ts` lines.
+ */
+export function extensionLabel(rawPath: string | undefined): string {
+  const p = rawPath ?? "";
+  if (!p) return "<unknown>";
+  if (p.startsWith("<")) return p.replace(/^<|>$/g, "");
+
+  const abs = path.resolve(p);
+  const stem = path.basename(abs).replace(/\.[cm]?[jt]sx?$/i, "");
+  const dirs = path.dirname(abs).split(path.sep).filter(Boolean);
+
+  if (stem === "index" || stem === "main" || stem === "extension") {
+    for (let i = dirs.length - 1; i >= 0; i--) {
+      if (!GENERIC_DIRS.has(dirs[i])) return dirs[i];
+    }
+    return stem;
+  }
+  const parent = dirs[dirs.length - 1];
+  if (!parent || GENERIC_DIRS.has(parent)) return stem;
+  return `${parent}/${stem}`;
+}
+
+/** Make labels unique by appending a shortened path to any collisions. */
+function disambiguateLabels<T extends { label: string; path: string }>(
+  entries: T[],
+): T[] {
+  const counts = new Map<string, number>();
+  for (const e of entries) counts.set(e.label, (counts.get(e.label) ?? 0) + 1);
+  return entries.map((e) =>
+    (counts.get(e.label) ?? 0) > 1 && !e.path.startsWith("<")
+      ? { ...e, label: `${e.label} (${shortenHome(e.path)})` }
+      : e,
+  );
+}
+
+function isSyntheticSource(info: SourceInfo | undefined): boolean {
+  return !info?.path || info.path.startsWith("<");
+}
+
+/** Mirror of pi-claude-code-use's alias segment sanitizer. */
+function sanitizeAliasSegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/**
+ * Detect schema-only `mcp__` alias tools (as registered by
+ * pi-claude-code-use for Anthropic OAuth, which rejects flat-named custom
+ * tools). An alias is `mcp__<server>__<sanitized source name>` from a
+ * different source file with an identical description. On the wire the flat
+ * duplicate is removed, so counting both would overstate token cost.
+ */
+export function findAliasSource(
+  alias: ToolInfo,
+  candidates: ToolInfo[],
+): ToolInfo | null {
+  const nameLc = alias.name.toLowerCase();
+  if (!nameLc.startsWith("mcp__")) return null;
+  for (const c of candidates) {
+    if (c.name === alias.name) continue;
+    if (c.name.toLowerCase().startsWith("mcp__")) continue;
+    if (c.sourceInfo?.path === alias.sourceInfo?.path) continue;
+    const seg = sanitizeAliasSegment(c.name);
+    if (!seg) continue;
+    // mcp__<server>__<tool>, optionally with a numeric collision suffix.
+    if (!new RegExp(`^mcp__[a-z0-9_]+__${seg}(_\\d+)?$`).test(nameLc)) continue;
+    if ((alias.description ?? "") !== (c.description ?? "")) continue;
+    return c;
+  }
+  return null;
+}
+
+type ExtensionEntry = {
+  label: string;
+  path: string;
+  scope?: string;
+  commands: string[];
+  tools: string[];
+};
+
+/**
+ * Group everything a single extension file contributes (slash commands and
+ * tools) under one line, keyed by its source path.
+ */
+export function collectExtensions(
+  commands: Array<{ name: string; source: string; sourceInfo?: SourceInfo }>,
+  tools: Array<{ name: string; sourceInfo?: SourceInfo }>,
+): ExtensionEntry[] {
+  const byPath = new Map<string, ExtensionEntry>();
+
+  const entryFor = (info: SourceInfo | undefined): ExtensionEntry => {
+    const p = info?.path ?? "<unknown>";
+    let e = byPath.get(p);
+    if (!e) {
+      e = {
+        label: extensionLabel(p),
+        path: p,
+        scope: info?.scope,
+        commands: [],
+        tools: [],
+      };
+      byPath.set(p, e);
+    }
+    return e;
+  };
+
+  for (const c of commands) {
+    if (c.source !== "extension") continue;
+    entryFor(c.sourceInfo).commands.push(c.name);
+  }
+  for (const t of tools) {
+    // builtin/sdk tools are not extensions; they're attributed but not listed.
+    if (isSyntheticSource(t.sourceInfo)) continue;
+    entryFor(t.sourceInfo).tools.push(t.name);
+  }
+
+  const entries = [...byPath.values()].map((e) => ({
+    ...e,
+    commands: [...e.commands].sort((a, b) => a.localeCompare(b)),
+    tools: [...e.tools].sort((a, b) => a.localeCompare(b)),
+  }));
+  return disambiguateLabels(entries).sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
 }
 
 function renderUsageBar(
@@ -376,7 +520,10 @@ function buildSystemPromptBreakdown(
   if (agentTokens > 0)
     out.push({ label: "AGENTS/context files", tokens: agentTokens });
   if (skillsTokens > 0)
-    out.push({ label: `skills index (${skillsCount})`, tokens: skillsTokens });
+    out.push({
+      label: `skills index (${skillsCount} model-invocable)`,
+      tokens: skillsTokens,
+    });
   if (cwdDateTokens > 0)
     out.push({ label: "date + cwd", tokens: cwdDateTokens });
 
@@ -445,10 +592,10 @@ function buildSkillPromptBreakdownFromCommands(
 
 type ContextViewData = {
   usage: {
-    // message-based context usage estimate from ctx.getContextUsage()
+    /** Context estimate from ctx.getContextUsage() (provider-anchored once a reply exists). */
     messageTokens: number;
     contextWindow: number;
-    // effective usage incl. a rough tool-definition estimate
+    /** What we actually report as "used" — see `mode`. */
     effectiveTokens: number;
     percent: number;
     remainingTokens: number;
@@ -456,16 +603,191 @@ type ContextViewData = {
     agentTokens: number;
     toolsTokens: number;
     activeTools: number;
+    /** Active aliases whose flat source is also active (deduped on the wire). */
+    dedupedAliases: number;
+    /**
+     * "measured": the provider already reported usage, which includes system
+     * prompt + tool schemas, so we must not add our own estimates on top.
+     * "estimated": no assistant reply yet, so we sum our own estimates.
+     */
+    mode: "measured" | "estimated";
   } | null;
   agentFiles: Array<{ path: string; tokens: number }>;
   systemBreakdown: Array<{ label: string; tokens: number }>;
   skillBreakdown: Array<{ name: string; tokens: number; source?: string }>;
-  toolBreakdown: Array<{ name: string; tokens: number }>;
-  extensions: string[];
-  skills: Array<{ name: string; source?: string; userInvoked?: boolean }>;
-  loadedSkills: string[];
+  toolBreakdown: Array<{
+    name: string;
+    tokens: number;
+    source?: string;
+    /** Flat tool this mcp__ alias mirrors, when detected. */
+    aliasOf?: string;
+    /** false → excluded from the tools total (wire-deduplicated duplicate). */
+    counted: boolean;
+  }>;
+  extensions: ExtensionEntry[];
+  skills: Array<{
+    name: string;
+    source?: string;
+    userInvoked: boolean;
+    loaded: boolean;
+    tokens?: number;
+  }>;
   session: { totalTokens: number; totalCost: number };
 };
+
+type Styler = {
+  heading: (s: string) => string;
+  label: (s: string) => string;
+  value: (s: string) => string;
+  dim: (s: string) => string;
+  skillName: (name: string, loaded: boolean, userInvoked: boolean) => string;
+};
+
+export const PLAIN_STYLER: Styler = {
+  heading: (s) => s,
+  label: (s) => s,
+  value: (s) => s,
+  dim: (s) => s,
+  skillName: (n) => n,
+};
+
+const ITEM = "  - ";
+const SUBITEM = "    - ";
+
+function tok(n: number): string {
+  return `~${n.toLocaleString()} tok`;
+}
+
+/**
+ * Single source of truth for the report layout. The TUI passes a themed
+ * styler (plus a pre-rendered usage bar); the headless path passes
+ * PLAIN_STYLER. Keeping one renderer stops the two outputs from drifting.
+ */
+export function buildReportLines(
+  d: ContextViewData,
+  s: Styler,
+  bar?: string,
+): string[] {
+  const lines: string[] = [];
+
+  if (!d.usage) {
+    lines.push(s.label("Window: ") + s.dim("(unknown)"));
+  } else {
+    const u = d.usage;
+    lines.push(
+      s.label("Window: ") +
+        s.value(
+          `~${u.effectiveTokens.toLocaleString()} / ${u.contextWindow.toLocaleString()}`,
+        ) +
+        s.label(
+          `  (${u.percent.toFixed(1)}% used, ~${u.remainingTokens.toLocaleString()} left)`,
+        ) +
+        s.dim(
+          u.mode === "measured"
+            ? "  [reported by provider]"
+            : "  [estimated, no reply yet]",
+        ),
+    );
+    if (bar) lines.push(bar);
+  }
+
+  const section = (title: string) => {
+    lines.push("");
+    lines.push(s.heading(title));
+  };
+
+  if (d.usage) {
+    const u = d.usage;
+    section("Prompt");
+    lines.push(s.label("System: ") + s.value(tok(u.systemPromptTokens)));
+    for (const x of d.systemBreakdown) {
+      lines.push(SUBITEM + s.value(x.label) + s.label(` ${tok(x.tokens)}`));
+    }
+    lines.push(
+      s.label("Tools: ") +
+        s.value(tok(u.toolsTokens)) +
+        s.label(` (${u.activeTools} active`) +
+        (u.dedupedAliases > 0
+          ? s.label(", ") +
+            s.dim(`${u.dedupedAliases} aliases not double-counted`)
+          : "") +
+        s.label(")"),
+    );
+    for (const x of d.toolBreakdown) {
+      if (!x.counted) {
+        // Wire-deduplicated alias, nested under its flat source line.
+        lines.push(
+          "      " +
+            s.dim(`↳ ${x.name}  sent instead under Anthropic OAuth`),
+        );
+        continue;
+      }
+      lines.push(
+        SUBITEM +
+          s.value(x.name) +
+          s.label(` ${tok(x.tokens)}`) +
+          (x.source ? s.dim(`  from ${x.source}`) : "") +
+          (x.aliasOf ? s.dim(`  alias of ${x.aliasOf} (inactive)`) : ""),
+      );
+    }
+  }
+
+  section(`Context files (${d.agentFiles.length})`);
+  if (d.agentFiles.length === 0) {
+    lines.push(ITEM + s.dim("(none)"));
+  } else {
+    for (const f of d.agentFiles) {
+      lines.push(ITEM + s.value(f.path) + s.label(` ${tok(f.tokens)}`));
+    }
+  }
+
+  section(`Extensions (${d.extensions.length})`);
+  lines.push(s.dim("  detected from registered commands and active tools"));
+  if (d.extensions.length === 0) {
+    lines.push(ITEM + s.dim("(none)"));
+  } else {
+    for (const e of d.extensions) {
+      const parts: string[] = [];
+      if (e.commands.length)
+        parts.push(e.commands.map((c) => `/${c}`).join(" "));
+      if (e.tools.length) parts.push(`tools: ${e.tools.join(" ")}`);
+      lines.push(
+        ITEM +
+          s.value(e.label) +
+          (parts.length ? s.dim(`  ${parts.join("  ·  ")}`) : ""),
+      );
+    }
+  }
+
+  const inPrompt = d.skills.filter((x) => !x.userInvoked).length;
+  section(
+    `Skills (${d.skills.length}: ${inPrompt} in prompt, ${d.skills.length - inPrompt} user-invoked)`,
+  );
+  if (d.skills.length === 0) {
+    lines.push(ITEM + s.dim("(none)"));
+  } else {
+    for (const sk of d.skills) {
+      lines.push(
+        ITEM +
+          s.skillName(sk.name, sk.loaded, sk.userInvoked) +
+          (sk.tokens != null ? s.label(` ${tok(sk.tokens)}`) : "") +
+          (sk.userInvoked ? s.dim(" [user-invoked]") : "") +
+          (sk.loaded ? s.dim(" [read this session]") : "") +
+          (sk.source ? s.dim(`  ${sk.source}`) : ""),
+      );
+    }
+  }
+
+  lines.push("");
+  lines.push(
+    s.label("Session: ") +
+      s.value(`${d.session.totalTokens.toLocaleString()} tokens`) +
+      s.label(" · ") +
+      s.value(formatUsd(d.session.totalCost)),
+  );
+
+  return lines;
+}
 
 class ContextView implements Component {
   private tui: TUI;
@@ -502,161 +824,57 @@ class ContextView implements Component {
   }
 
   private rebuild(width: number): void {
-    const muted = (s: string) => this.theme.fg("muted", s);
-    const dim = (s: string) => this.theme.fg("dim", s);
-    const text = (s: string) => this.theme.fg("text", s);
+    const theme = this.theme;
+    const styler: Styler = {
+      heading: (s) => theme.fg("accent", theme.bold(s)),
+      label: (s) => theme.fg("muted", s),
+      value: (s) => theme.fg("text", s),
+      dim: (s) => theme.fg("dim", s),
+      skillName: (name, loaded, userInvoked) =>
+        userInvoked
+          ? theme.fg("warning", name)
+          : loaded
+            ? theme.fg("success", name)
+            : theme.fg("text", name),
+    };
 
-    const lines: string[] = [];
-
-    // Window + bar
-    if (!this.data.usage) {
-      lines.push(muted("Window: ") + dim("(unknown)"));
-    } else {
-      const u = this.data.usage;
-      lines.push(
-        muted("Window: ") +
-          text(
-            `~${u.effectiveTokens.toLocaleString()} / ${u.contextWindow.toLocaleString()}`,
-          ) +
-          muted(
-            `  (${u.percent.toFixed(1)}% used, ~${u.remainingTokens.toLocaleString()} left)`,
-          ),
-      );
-
-      // bar width tries to fit within the viewport
+    let bar: string | undefined;
+    const u = this.data.usage;
+    if (u && u.contextWindow > 0) {
       const barWidth = Math.max(10, Math.min(36, width - 10));
-
-      // Prorate system prompt into current message context estimate, then add tools estimate.
-      const sysInMessages = Math.min(u.systemPromptTokens, u.messageTokens);
-      const convoInMessages = Math.max(0, u.messageTokens - sysInMessages);
-      const bar =
+      // Split the reported total into system / tools / conversation. In
+      // "measured" mode the provider total already contains the system prompt
+      // and tool schemas, so they are carved out of it rather than added.
+      const sys = Math.min(u.systemPromptTokens, u.effectiveTokens);
+      const tools = Math.max(0, Math.min(u.toolsTokens, u.effectiveTokens - sys));
+      const convo = Math.max(0, u.effectiveTokens - sys - tools);
+      bar =
         renderUsageBar(
-          this.theme,
+          theme,
           {
-            system: sysInMessages,
-            tools: u.toolsTokens,
-            convo: convoInMessages,
+            system: sys,
+            tools,
+            convo,
             remaining: u.remainingTokens,
           },
           u.contextWindow,
           barWidth,
         ) +
         " " +
-        dim("sys") +
-        this.theme.fg("accent", "█") +
+        theme.fg("dim", "sys") +
+        theme.fg("accent", "\u2588") +
         " " +
-        dim("tools") +
-        this.theme.fg("warning", "█") +
+        theme.fg("dim", "tools") +
+        theme.fg("warning", "\u2588") +
         " " +
-        dim("convo") +
-        this.theme.fg("success", "█") +
+        theme.fg("dim", "convo") +
+        theme.fg("success", "\u2588") +
         " " +
-        dim("free") +
-        this.theme.fg("dim", "█");
-      lines.push(bar);
+        theme.fg("dim", "free") +
+        theme.fg("dim", "\u2588");
     }
 
-    lines.push("");
-
-    // System prompt + tools totals (approx)
-    if (this.data.usage) {
-      const u = this.data.usage;
-
-      lines.push(this.theme.fg("accent", this.theme.bold("Prompt")));
-      lines.push(
-        muted("System: ") +
-          text(`~${u.systemPromptTokens.toLocaleString()} tok`),
-      );
-      if (this.data.systemBreakdown.length > 0) {
-        lines.push(muted("  breakdown:"));
-        for (const x of this.data.systemBreakdown) {
-          lines.push(
-            muted("    - ") +
-              text(x.label) +
-              muted(` ~${x.tokens.toLocaleString()} tok`),
-          );
-        }
-      }
-      lines.push(
-        muted("Tools: ") +
-          text(`~${u.toolsTokens.toLocaleString()} tok`) +
-          muted(` (${u.activeTools} active)`),
-      );
-      if (this.data.toolBreakdown.length > 0) {
-        lines.push(muted("  active:"));
-        for (const x of this.data.toolBreakdown) {
-          lines.push(
-            muted("    - ") +
-              text(x.name) +
-              muted(` ~${x.tokens.toLocaleString()} tok`),
-          );
-        }
-      }
-
-      lines.push("");
-      lines.push(this.theme.fg("accent", this.theme.bold("Project")));
-    }
-
-    lines.push(muted(`AGENTS (${this.data.agentFiles.length}):`));
-    if (this.data.agentFiles.length === 0) {
-      lines.push(muted("  - ") + dim("(none)"));
-    } else {
-      for (const f of this.data.agentFiles) {
-        lines.push(
-          muted("  - ") +
-            text(f.path) +
-            muted(` ~${f.tokens.toLocaleString()} tok`),
-        );
-      }
-    }
-    lines.push("");
-
-    lines.push(this.theme.fg("accent", this.theme.bold("Extensions")));
-    lines.push(muted(`Loaded (${this.data.extensions.length}):`));
-    if (this.data.extensions.length === 0) {
-      lines.push(muted("  - ") + dim("(none)"));
-    } else {
-      for (const e of this.data.extensions) {
-        lines.push(muted("  - ") + text(e));
-      }
-    }
-
-    const loaded = new Set(this.data.loadedSkills);
-    lines.push("");
-    lines.push(this.theme.fg("accent", this.theme.bold("Skills")));
-    lines.push(muted(`Available (${this.data.skills.length}):`));
-    if (this.data.skills.length === 0) {
-      lines.push(muted("  - ") + dim("(none)"));
-    } else {
-      const tokensByName = new Map(
-        this.data.skillBreakdown.map((x) => [x.name, x.tokens] as const),
-      );
-      const sortedSkills = [...this.data.skills].sort((a, b) =>
-        a.name.localeCompare(b.name),
-      );
-      for (const s of sortedSkills) {
-        const nameStyled = s.userInvoked
-          ? this.theme.fg("warning", s.name)
-          : loaded.has(s.name)
-            ? this.theme.fg("success", s.name)
-            : text(s.name);
-        const tok = tokensByName.get(s.name);
-        const tokStr =
-          tok != null ? muted(` ~${tok.toLocaleString()} tok`) : "";
-        const tagStr = s.userInvoked ? dim(" [user-invoked]") : "";
-        const srcStr = s.source ? dim(`  (${s.source})`) : "";
-        lines.push(muted("  - ") + nameStyled + tokStr + tagStr + srcStr);
-      }
-    }
-    lines.push("");
-    lines.push(
-      muted("Session: ") +
-        text(`${this.data.session.totalTokens.toLocaleString()} tokens`) +
-        muted(" · ") +
-        text(formatUsd(this.data.session.totalCost)),
-    );
-
-    this.body.setText(lines.join("\n"));
+    this.body.setText(buildReportLines(this.data, styler, bar).join("\n"));
     this.cachedWidth = width;
   }
 
@@ -760,19 +978,17 @@ export default function contextExtension(pi: ExtensionAPI) {
     description: "Show loaded context overview",
     handler: async (_args, ctx: ExtensionCommandContext) => {
       const commands = pi.getCommands();
-      const extensionCmds = commands.filter((c) => c.source === "extension");
       const skillCmds = commands.filter((c) => c.source === "skill");
+      const allTools = pi.getAllTools();
+      const activeToolNames = pi.getActiveTools();
+      const activeToolSet = new Set(activeToolNames);
 
-      const extensionsByPath = new Map<string, string[]>();
-      for (const c of extensionCmds) {
-        const p = c.sourceInfo?.path ?? "<unknown>";
-        const arr = extensionsByPath.get(p) ?? [];
-        arr.push(c.name);
-        extensionsByPath.set(p, arr);
-      }
-      const extensionFiles = [...extensionsByPath.keys()]
-        .map((p) => shortenExtensionPath(p))
-        .sort((a, b) => a.localeCompare(b));
+      // Extensions are identified by their source file and grouped with
+      // everything they contribute, so every line is self-explanatory.
+      const extensions = collectExtensions(
+        commands,
+        allTools.filter((t) => activeToolSet.has(t.name)),
+      );
 
       // Build a name -> source dir map from the skill index so we can
       // show users where each skill is loaded from.
@@ -863,12 +1079,6 @@ export default function contextExtension(pi: ExtensionAPI) {
       const systemPromptTokens = systemPrompt
         ? estimateTokens(systemPrompt)
         : 0;
-      const systemBreakdown = buildSystemPromptBreakdown(
-        lastPromptOptions,
-        systemPrompt,
-        agentTokens,
-        skills.length,
-      );
       const skillBreakdownRaw = lastPromptOptions?.skills?.length
         ? buildSkillPromptBreakdown(lastPromptOptions.skills)
         : buildSkillPromptBreakdownFromCommands(
@@ -882,121 +1092,121 @@ export default function contextExtension(pi: ExtensionAPI) {
           ? shortenHome(skillSourceByName.get(x.name)!)
           : undefined,
       }));
+      // Only model-invocable skills contribute to the <available_skills>
+      // block, so that's the count the breakdown label should show.
+      const systemBreakdown = buildSystemPromptBreakdown(
+        lastPromptOptions,
+        systemPrompt,
+        agentTokens,
+        skillBreakdown.length,
+      );
 
       const usage = ctx.getContextUsage();
       const messageTokens = usage?.tokens ?? 0;
       const ctxWindow = usage?.contextWindow ?? 0;
 
-      // Tool definitions are not part of ctx.getContextUsage() (it estimates message tokens).
-      // We approximate their token impact from tool name + description, and apply a fudge
-      // factor to account for parameters/schema/formatting.
-      const TOOL_FUDGE = 1.5;
-      const activeToolNames = pi.getActiveTools();
-      const toolInfoByName = new Map(
-        pi.getAllTools().map((t) => [t.name, t] as const),
-      );
-      let toolsTokens = 0;
-      const toolBreakdown: Array<{ name: string; tokens: number }> = [];
+      // Tool definitions aren't itemised anywhere, so estimate them from the
+      // full serialized definition (name + description + JSON schema + any
+      // prompt guidelines) plus a small per-tool framing overhead.
+      const TOOL_OVERHEAD_TOKENS = 8;
+      const toolInfoByName = new Map(allTools.map((t) => [t.name, t] as const));
+
+      // Detect mcp__ aliases of flat tools (see findAliasSource). When both
+      // sides are active the flat one is stripped from the wire, so only the
+      // alias' twin is counted once; when only the alias is active it *is*
+      // the real tool on the wire and counts normally.
+      const aliasSourceByName = new Map<
+        string,
+        { source: string; sourceActive: boolean }
+      >();
       for (const name of activeToolNames) {
         const info = toolInfoByName.get(name);
-        const blob = `${name}\n${info?.description ?? ""}`;
-        const tokens = Math.round(estimateTokens(blob) * TOOL_FUDGE);
-        toolsTokens += tokens;
-        toolBreakdown.push({ name, tokens });
+        if (!info) continue;
+        const src = findAliasSource(info, allTools);
+        if (src) {
+          aliasSourceByName.set(name, {
+            source: src.name,
+            sourceActive: activeToolSet.has(src.name),
+          });
+        }
       }
-      toolBreakdown.sort(
+
+      let toolsTokens = 0;
+      let dedupedAliases = 0;
+      type ToolLine = ContextViewData["toolBreakdown"][number];
+      const countedLines: ToolLine[] = [];
+      const dedupedByFlatName = new Map<string, ToolLine>();
+      for (const name of activeToolNames) {
+        const info = toolInfoByName.get(name);
+        const blob = [
+          name,
+          info?.description ?? "",
+          info?.parameters ? JSON.stringify(info.parameters) : "",
+          typeof info?.promptGuidelines === "string"
+            ? info.promptGuidelines
+            : "",
+        ].join("\n");
+        const tokens = estimateTokens(blob) + TOOL_OVERHEAD_TOKENS;
+        const alias = aliasSourceByName.get(name);
+        const line: ToolLine = {
+          name,
+          tokens,
+          // Attribute every tool to its provider so duplicate-looking tools
+          // (e.g. an MCP tool and a native one) are distinguishable.
+          source: info ? extensionLabel(info.sourceInfo?.path) : undefined,
+          aliasOf: alias?.source,
+          counted: !alias?.sourceActive,
+        };
+        if (!line.counted) {
+          dedupedAliases++;
+          dedupedByFlatName.set(alias!.source, line);
+        } else {
+          toolsTokens += tokens;
+          countedLines.push(line);
+        }
+      }
+      countedLines.sort(
         (a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name),
       );
+      // Interleave: each deduplicated alias goes right below its flat source.
+      const toolBreakdown: ToolLine[] = [];
+      for (const line of countedLines) {
+        toolBreakdown.push(line);
+        const dup = dedupedByFlatName.get(line.name);
+        if (dup) {
+          toolBreakdown.push(dup);
+          dedupedByFlatName.delete(line.name);
+        }
+      }
+      // Safety net: any alias whose source line vanished still gets shown.
+      toolBreakdown.push(...dedupedByFlatName.values());
 
-      const effectiveTokens = messageTokens + toolsTokens;
+      // Once the provider has reported usage, ctx.getContextUsage() is
+      // anchored to a real total that already includes the system prompt and
+      // tool schemas — adding our estimates on top would double count. Before
+      // the first reply there is nothing to anchor to, so we sum estimates.
+      const hasProviderUsage = ctx.sessionManager
+        .getEntries()
+        .some(
+          (e: any) =>
+            e?.type === "message" &&
+            e?.message?.role === "assistant" &&
+            e?.message?.usage,
+        );
+      const mode: "measured" | "estimated" = hasProviderUsage
+        ? "measured"
+        : "estimated";
+      const effectiveTokens = hasProviderUsage
+        ? messageTokens
+        : messageTokens + systemPromptTokens + toolsTokens;
       const percent = ctxWindow > 0 ? (effectiveTokens / ctxWindow) * 100 : 0;
       const remainingTokens =
         ctxWindow > 0 ? Math.max(0, ctxWindow - effectiveTokens) : 0;
 
       const sessionUsage = sumSessionUsage(ctx);
-
-      const makePlainText = () => {
-        const lines: string[] = [];
-        lines.push("Context");
-        if (usage) {
-          lines.push(
-            `Window: ~${effectiveTokens.toLocaleString()} / ${ctxWindow.toLocaleString()} (${percent.toFixed(1)}% used, ~${remainingTokens.toLocaleString()} left)`,
-          );
-        } else {
-          lines.push("Window: (unknown)");
-        }
-        lines.push("Prompt");
-        lines.push(
-          `  System: ~${systemPromptTokens.toLocaleString()} tok`,
-        );
-        if (systemBreakdown.length > 0) {
-          lines.push("  System breakdown:");
-          for (const x of systemBreakdown) {
-            lines.push(`    - ${x.label} ~${x.tokens.toLocaleString()} tok`);
-          }
-        }
-        lines.push(
-          `  Tools: ~${toolsTokens.toLocaleString()} tok (${activeToolNames.length} active)`,
-        );
-        if (toolBreakdown.length > 0) {
-          lines.push("  Active tools:");
-          for (const x of toolBreakdown) {
-            lines.push(`    - ${x.name} ~${x.tokens.toLocaleString()} tok`);
-          }
-        }
-        lines.push("Project");
-        lines.push(`  AGENTS (${agentFilesShown.length}):`);
-        if (agentFilesShown.length === 0) {
-          lines.push("    - (none)");
-        } else {
-          for (const f of agentFilesShown) {
-            lines.push(`    - ${f.path} ~${f.tokens.toLocaleString()} tok`);
-          }
-        }
-        lines.push("Extensions");
-        lines.push(`  Loaded (${extensionFiles.length}):`);
-        if (extensionFiles.length === 0) {
-          lines.push("    - (none)");
-        } else {
-          for (const e of extensionFiles) {
-            lines.push(`    - ${e}`);
-          }
-        }
-        lines.push("Skills");
-        lines.push(`  Available (${skills.length}):`);
-        if (skills.length === 0) {
-          lines.push("    - (none)");
-        } else {
-          const tokensByName = new Map(
-            skillBreakdown.map((x) => [x.name, x.tokens] as const),
-          );
-          const sortedSkills = [...skills].sort((a, b) =>
-            a.name.localeCompare(b.name),
-          );
-          for (const s of sortedSkills) {
-            const tok = tokensByName.get(s.name);
-            const tokStr = tok != null ? ` ~${tok.toLocaleString()} tok` : "";
-            const tagStr = s.userInvoked ? " [user-invoked]" : "";
-            const srcStr = s.source ? `  (${s.source})` : "";
-            lines.push(`    - ${s.name}${tokStr}${tagStr}${srcStr}`);
-          }
-        }
-        lines.push(
-          `Session: ${sessionUsage.totalTokens.toLocaleString()} tokens · ${formatUsd(sessionUsage.totalCost)}`,
-        );
-        return lines.join("\n");
-      };
-
-      if (!ctx.hasUI) {
-        pi.sendMessage(
-          { customType: "context", content: makePlainText(), display: true },
-          { triggerTurn: false },
-        );
-        return;
-      }
-
-      const loadedSkills = Array.from(getLoadedSkillsFromSession(ctx)).sort(
-        (a, b) => a.localeCompare(b),
+      const loadedSkills = getLoadedSkillsFromSession(ctx);
+      const skillTokensByName = new Map(
+        skillBreakdown.map((x) => [x.name, x.tokens] as const),
       );
 
       const viewData: ContextViewData = {
@@ -1011,20 +1221,38 @@ export default function contextExtension(pi: ExtensionAPI) {
               agentTokens,
               toolsTokens,
               activeTools: activeToolNames.length,
+              dedupedAliases,
+              mode,
             }
           : null,
         agentFiles: agentFilesShown,
         systemBreakdown,
         skillBreakdown,
         toolBreakdown,
-        extensions: extensionFiles,
-        skills,
-        loadedSkills,
+        extensions,
+        skills: skills.map((s) => ({
+          ...s,
+          loaded: loadedSkills.has(s.name),
+          tokens: skillTokensByName.get(s.name),
+        })),
         session: {
           totalTokens: sessionUsage.totalTokens,
           totalCost: sessionUsage.totalCost,
         },
       };
+
+      if (!ctx.hasUI) {
+        pi.sendMessage(
+          {
+            customType: "context",
+            content: ["Context", ...buildReportLines(viewData, PLAIN_STYLER)]
+              .join("\n"),
+            display: true,
+          },
+          { triggerTurn: false },
+        );
+        return;
+      }
 
       await ctx.ui.custom<void>((tui, theme, _kb, done) => {
         return new ContextView(tui, theme, viewData, done);
