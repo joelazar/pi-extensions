@@ -26,6 +26,7 @@
       "./extensions/context/index.ts",
       "./extensions/cwd-history/index.ts",
       "./extensions/export-md/index.ts",
+      "./extensions/footer/index.ts",
       "./extensions/pr-create/index.ts",
       "./extensions/rtk/index.ts",
       "./extensions/sandbox/index.ts",

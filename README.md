@@ -29,6 +29,7 @@ pi install "$PWD"
 | `context`         | `/context`                    | Shows what is loaded in the session: extensions, skills, prompts, MCP servers          |
 | `cwd-history`     | prompt history                | Seeds editor history with prompts from other sessions in the same directory            |
 | `export-md`       | `/md`, `ctrl+shift+m`         | Renders the session to Markdown and opens it                                           |
+| `footer`          | TUI footer                    | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files               |
 | `pr-create`       | `/pr-create`                  | Front-end for my `pr-create` script using pi's dialogs instead of gum                  |
 | `rtk`             | bash rewriting                | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
 | `sandbox`         | `/sandbox`, `--sandbox`       | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
