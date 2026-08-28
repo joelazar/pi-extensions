@@ -1,7 +1,7 @@
 /**
  * Minimal two-line footer:
  *   cwd                                        provider/model · thinking
- *   ctx%/window · $cost                        branch · N files changed
+ *   ctx%/window · $cost                    branch · 3 files · +120/-40
  *
  * Extension statuses render below, one per line.
  *
@@ -31,15 +31,27 @@ function isAnthropicLike(provider: string | undefined) {
   return provider === "anthropic" || !!provider?.startsWith("anthropic-");
 }
 
-function countChangedFiles(cwd: string) {
-  return new Promise<number>((resolve) => {
+type Diffstat = { files: number; insertions: number; deletions: number };
+
+function readDiffstat(cwd: string) {
+  return new Promise<Diffstat>((resolve) => {
     execFile(
       "git",
-      ["status", "--porcelain=v1", "--untracked-files=all"],
+      ["diff", "--numstat", "HEAD"],
       { cwd, timeout: GIT_TIMEOUT_MS },
       (error, stdout) => {
-        if (error) return resolve(0);
-        resolve(stdout.split("\n").filter((line) => line.trim()).length);
+        if (error) return resolve({ files: 0, insertions: 0, deletions: 0 });
+        let files = 0;
+        let insertions = 0;
+        let deletions = 0;
+        for (const line of stdout.split("\n")) {
+          if (!line.trim()) continue;
+          const [added, removed] = line.split("\t");
+          files += 1;
+          insertions += Number.parseInt(added, 10) || 0;
+          deletions += Number.parseInt(removed, 10) || 0;
+        }
+        resolve({ files, insertions, deletions });
       },
     );
   });
@@ -90,14 +102,19 @@ function columns(left: string, right: string, width: number) {
 }
 
 export default function footer(pi: ExtensionAPI) {
-  let changedFiles = 0;
+  let diffstat: Diffstat = { files: 0, insertions: 0, deletions: 0 };
   let requestRender: (() => void) | undefined;
   let claimTimers: Array<ReturnType<typeof setTimeout>> = [];
 
   async function refreshGit(ctx: ExtensionContext) {
-    const count = await countChangedFiles(ctx.cwd);
-    if (count === changedFiles) return;
-    changedFiles = count;
+    const next = await readDiffstat(ctx.cwd);
+    if (
+      next.files === diffstat.files &&
+      next.insertions === diffstat.insertions &&
+      next.deletions === diffstat.deletions
+    )
+      return;
+    diffstat = next;
     requestRender?.();
   }
 
@@ -140,9 +157,10 @@ export default function footer(pi: ExtensionAPI) {
             : modelId;
 
           const branch = footerData.getGitBranch();
-          const git = branch
-            ? `${branch} · ${changedFiles} ${changedFiles === 1 ? "file" : "files"} changed`
+          const changes = diffstat.files
+            ? ` · ${diffstat.files} ${diffstat.files === 1 ? "file" : "files"} · +${diffstat.insertions}/-${diffstat.deletions}`
             : "";
+          const git = branch ? `${branch}${changes}` : "";
 
           const lines = [
             columns(
