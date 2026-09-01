@@ -17,8 +17,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 const commitStyleInstructions = `**IMPORTANT**: Before creating commit messages:
-1. Examine the recent commits to understand the commit message *format* (gitmoji vs conventional commits, capitalization, tense, prefix style, line length).
-2. Match that format — but DO NOT just copy the most-frequent gitmoji. Pick the gitmoji that genuinely fits THIS change. The recent log is for *style*, not for emoji selection.
+1. Examine the recent commit subjects to understand the repository's subject *format*: gitmoji vs conventional commits vs plain, capitalization, tense, prefix/scope style, subject length.
+2. Match that format exactly — if the repo never uses gitmoji, do not introduce it; if it always uses \`type(scope):\`, use it — but DO NOT just copy the most-frequent gitmoji. Pick the gitmoji that genuinely fits THIS change. The recent log is for *style*, not for emoji selection.
 3. **Gitmoji selection** (only if the repo uses gitmoji). Pick the single best fit for the dominant change:
    - :sparkles: new feature / new file added for a feature
    - :bug: bug fix
@@ -159,12 +159,19 @@ async function ensureGitRepo(
   return true;
 }
 
+const RECENT_COMMITS_ARGS = [
+  "log",
+  "--no-merges",
+  "-20",
+  "--pretty=format:%s",
+];
+
 async function getGitContext(pi: ExtensionAPI) {
   const [status, diff, branch, log] = await Promise.all([
     runGit(pi, ["status", "--short", "--branch"]),
     runGit(pi, ["diff", "HEAD"]),
     runGit(pi, ["branch", "--show-current"]),
-    runGit(pi, ["log", "--pretty=format:%s", "-20"]),
+    runGit(pi, RECENT_COMMITS_ARGS),
   ]);
 
   return { status, diff, branch, log };
@@ -196,7 +203,7 @@ function buildCommitUserMessage(
     : "";
   message += `- Current git diff (${diffLabel}, lockfiles/generated files excluded — see stat above for those)${diffNote}:\n\`\`\`\n${context.diff.trim() || "(no diff content; only excluded files changed)"}\n\`\`\`\n\n`;
   message += `- Current branch: ${context.branch.trim()}\n\n`;
-  message += `- Recent commits for style reference (FORMAT only, not for emoji selection):\n\`\`\`\n${context.log.trim()}\n\`\`\``;
+  message += `- Recent commit subjects for style reference (FORMAT only — casing, tense, prefix/gitmoji usage; NOT for emoji selection):\n\`\`\`\n${context.log.trim()}\n\`\`\``;
 
   if (context.stagedOnly) {
     message +=
@@ -379,7 +386,7 @@ async function doCommit(
   const [statusResult, branchResult, logResult, modelPromise] = await Promise.all([
     runGit(pi, ["status", "--short", "--branch"]),
     runGit(pi, ["branch", "--show-current"]),
-    runGit(pi, ["log", "--pretty=format:%s", "-20"]),
+    runGit(pi, RECENT_COMMITS_ARGS),
     selectCommitModel(ctx),
   ]);
 
@@ -575,7 +582,7 @@ ${diff.stdout.trim()}
 
 - Current branch: ${currentBranch}
 
-- Recent commits for style reference:
+- Recent commit subjects for style reference (casing, tense, prefix/gitmoji usage):
 \`\`\`
 ${log.stdout.trim()}
 \`\`\`
@@ -679,7 +686,7 @@ ${branchDiff.stdout.trim()}
 ${commitLog.stdout.trim()}
 \`\`\`
 
-- Recent commits on ${baseBranch} for style reference:
+- Recent commit subjects on ${baseBranch} for style reference (casing, tense, prefix/gitmoji usage):
 \`\`\`
 ${log.stdout.trim()}
 \`\`\`
