@@ -25,6 +25,9 @@ import {
 } from "@earendil-works/pi-tui";
 
 const GIT_TIMEOUT_MS = 3_000;
+const ROT_WARN_TOKENS = 100_000;
+const ROT_DEGRADED_TOKENS = 300_000;
+const ROT_LIMIT_PERCENT = 85;
 const FOOTER_CLAIM_DELAYS_MS = [0, 250, 1_000];
 
 function isAnthropicLike(provider: string | undefined) {
@@ -55,6 +58,14 @@ function readDiffstat(cwd: string) {
       },
     );
   });
+}
+
+function rotColor(tokens: number | null, percent: number | null) {
+  if (tokens === null) return "muted" as const;
+  if (percent !== null && percent >= ROT_LIMIT_PERCENT) return "error" as const;
+  if (tokens >= ROT_DEGRADED_TOKENS) return "error" as const;
+  if (tokens >= ROT_WARN_TOKENS) return "warning" as const;
+  return "success" as const;
 }
 
 function formatTokens(tokens: number) {
@@ -145,7 +156,11 @@ export default function footer(pi: ExtensionAPI) {
             ? ctx.modelRegistry.isUsingOAuth(model)
             : false;
           const cost = `$${sessionCost(ctx).toFixed(2)}${subscription ? " (sub)" : ""}`;
-          const stats = `${contextPercent}%/${contextWindow > 0 ? formatTokens(contextWindow) : "?"} · ${cost}`;
+          const context = theme.fg(
+            rotColor(usage?.tokens ?? null, usage?.percent ?? null),
+            `${contextPercent}%/${contextWindow > 0 ? formatTokens(contextWindow) : "?"}`,
+          );
+          const stats = `${context}${theme.fg("muted", ` · ${cost}`)}`;
 
           const thinking = model?.reasoning ? pi.getThinkingLevel() : "off";
           const modelId =
@@ -158,9 +173,9 @@ export default function footer(pi: ExtensionAPI) {
 
           const branch = footerData.getGitBranch();
           const changes = diffstat.files
-            ? ` · ${diffstat.files} ${diffstat.files === 1 ? "file" : "files"} · +${diffstat.insertions}/-${diffstat.deletions}`
+            ? `${theme.fg("muted", ` · ${diffstat.files} ${diffstat.files === 1 ? "file" : "files"} · `)}${theme.fg("toolDiffAdded", `+${diffstat.insertions}`)}${theme.fg("muted", "/")}${theme.fg("toolDiffRemoved", `-${diffstat.deletions}`)}`
             : "";
-          const git = branch ? `${branch}${changes}` : "";
+          const git = branch ? `${theme.fg("muted", branch)}${changes}` : "";
 
           const lines = [
             columns(
@@ -168,7 +183,7 @@ export default function footer(pi: ExtensionAPI) {
               theme.fg("muted", modelLabel),
               width,
             ),
-            columns(theme.fg("muted", stats), theme.fg("muted", git), width),
+            columns(stats, git, width),
           ];
 
           for (const [, text] of [
