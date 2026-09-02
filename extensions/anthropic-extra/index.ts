@@ -145,6 +145,17 @@ export default function (pi: ExtensionAPI) {
 		// Mirrors built-in pi-ai anthropic models (see pi-ai/dist/models.generated.js).
 		models: [
 			{
+				id: "claude-fable-5-1",
+				name: "Claude Fable 5.1 (Extra)",
+				reasoning: true,
+				compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+				thinkingLevelMap: { off: null, xhigh: "xhigh", max: "max" },
+				input: ["text", "image"],
+				cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+				contextWindow: 1_000_000,
+				maxTokens: 128_000,
+			},
+			{
 				id: "claude-fable-5",
 				name: "Claude Fable 5 (Extra)",
 				reasoning: true,
