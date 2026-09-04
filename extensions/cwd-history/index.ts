@@ -32,7 +32,7 @@ class HistoryEditor extends CustomEditor {
     theme: ConstructorParameters<typeof CustomEditor>[1],
     keybindings: ConstructorParameters<typeof CustomEditor>[2],
   ) {
-    super(tui, theme, keybindings);
+    super(tui, theme, keybindings, { embedWorkingStatus: true });
     delete (this as { borderColor?: (text: string) => string }).borderColor;
     Object.defineProperty(this, "borderColor", {
       get: () => this._borderColor ?? ((text: string) => text),
