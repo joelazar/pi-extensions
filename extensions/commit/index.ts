@@ -288,24 +288,48 @@ async function generateCommitMessage(
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) throw new Error(auth.error);
 
+  // exe.dev registers aliased ids (`<native>@<integration>`); its gateway only
+  // accepts the native id. pi's request pipeline rewrites the alias away, but
+  // direct completeSimple calls bypass that, so strip it here.
+  const requestModel =
+    model.provider.startsWith("exe-dev-")
+      ? { ...model, id: model.id.replace(/@[^/@]+$/, "") }
+      : model;
+
   const userMessage: UserMessage = {
     role: "user",
     content: [{ type: "text", text: userMessageText }],
     timestamp: Date.now(),
   };
 
+  // Reasoning models think at full depth when their compat omits
+  // supportsReasoningEffort (deepseek via the exe.dev gateway). samplingParams
+  // is merged into OpenAI-compatible payloads last, overriding named fields,
+  // so forcing low effort here works regardless of the model's compat.
+  const simpleOptions = {
+    apiKey: auth.apiKey,
+    headers: auth.headers,
+    reasoning: "low" as const,
+    ...(requestModel.api === "openai-completions" && requestModel.reasoning
+      ? { samplingParams: { reasoning_effort: "low" as const } }
+      : {}),
+  };
+
   if (!ctx.hasUI) {
     const response = await completeSimple(
-      model,
+      requestModel,
       {
         systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
         messages: [userMessage],
       },
-      { apiKey: auth.apiKey, headers: auth.headers, reasoning: "low" },
+      simpleOptions,
     );
 
     if (response.stopReason === "aborted") {
       return null;
+    }
+    if (response.stopReason === "error") {
+      throw new Error(response.errorMessage || "Model call failed");
     }
 
     return extractText(response.content);
@@ -324,21 +348,22 @@ async function generateCommitMessage(
 
     const doGenerate = async () => {
       const response = await completeSimple(
-        model,
+        requestModel,
         {
           systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
           messages: [userMessage],
         },
         {
-          apiKey: auth.apiKey,
-          headers: auth.headers,
+          ...simpleOptions,
           signal: loader.signal,
-          reasoning: "low",
         },
       );
 
       if (response.stopReason === "aborted") {
         return null;
+      }
+      if (response.stopReason === "error") {
+        throw new Error(response.errorMessage || "Model call failed");
       }
 
       return extractText(response.content);
