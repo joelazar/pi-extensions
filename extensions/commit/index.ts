@@ -261,22 +261,22 @@ function buildCommitUrl(remoteUrl: string, hash: string): string {
   return `${url}/commit/${hash}`;
 }
 
-async function selectCommitModel(
+async function selectCommitModels(
   ctx: ExtensionContext,
-): Promise<Model<Api> | null> {
+): Promise<Model<Api>[]> {
   if (!ctx.model) {
-    return null;
+    return [];
   }
 
   const haiku = ctx.modelRegistry.find("anthropic-extra", "claude-haiku-4-5");
-  if (haiku) {
+  if (haiku && haiku.id !== ctx.model.id) {
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(haiku);
     if (auth.ok) {
-      return haiku;
+      return [haiku, ctx.model];
     }
   }
 
-  return ctx.model;
+  return [ctx.model];
 }
 
 async function generateCommitMessage(
@@ -311,7 +311,9 @@ async function generateCommitMessage(
     return extractText(response.content);
   }
 
-  return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+  const outcome = await ctx.ui.custom<
+    { text: string | null } | { error: unknown }
+  >((tui, theme, _kb, done) => {
     const loader = new BorderedLoader(
       tui,
       theme,
@@ -343,19 +345,48 @@ async function generateCommitMessage(
     };
 
     doGenerate()
-      .then(done)
-      .catch((err) => {
-        report(
-          pi,
-          ctx,
-          `Generation failed: ${err instanceof Error ? err.message : String(err)}`,
-          "error",
-        );
-        done(null);
-      });
+      .then((text) => done({ text }))
+      .catch((error) =>
+        done(loader.signal.aborted ? { text: null } : { error }),
+      );
 
     return loader;
   });
+
+  if ("error" in outcome) throw outcome.error;
+  return outcome.text;
+}
+
+async function generateWithFallback(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  models: Model<Api>[],
+  userMessageText: string,
+): Promise<string | null> {
+  let lastError: unknown;
+  for (const model of models) {
+    try {
+      return await generateCommitMessage(pi, ctx, model, userMessageText);
+    } catch (err) {
+      lastError = err;
+      const isLast = model === models[models.length - 1];
+      if (!isLast) {
+        report(
+          pi,
+          ctx,
+          `${model.id} failed, falling back to ${models[models.length - 1].id}`,
+          "info",
+        );
+      }
+    }
+  }
+  report(
+    pi,
+    ctx,
+    `Generation failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    "error",
+  );
+  return null;
 }
 
 function buildCommitArgs(commitMessage: string): string[] {
@@ -383,11 +414,11 @@ async function doCommit(
 
   // Phase 1: cheap calls in parallel + start model selection.
   // Defer the (potentially huge) diff to phase 2 once we know which one we need.
-  const [statusResult, branchResult, logResult, modelPromise] = await Promise.all([
+  const [statusResult, branchResult, logResult, models] = await Promise.all([
     runGit(pi, ["status", "--short", "--branch"]),
     runGit(pi, ["branch", "--show-current"]),
     runGit(pi, RECENT_COMMITS_ARGS),
-    selectCommitModel(ctx),
+    selectCommitModels(ctx),
   ]);
 
   if (
@@ -432,8 +463,7 @@ async function doCommit(
     return;
   }
 
-  const model = modelPromise;
-  if (!model) {
+  if (models.length === 0) {
     report(pi, ctx, "No model selected", "error");
     return;
   }
@@ -442,10 +472,10 @@ async function doCommit(
     diffResult.stdout,
   );
 
-  const commitMessage = await generateCommitMessage(
+  const commitMessage = await generateWithFallback(
     pi,
     ctx,
-    model,
+    models,
     buildCommitUserMessage(
       {
         status: statusResult.stdout,
