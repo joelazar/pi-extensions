@@ -21,6 +21,7 @@
   "pi": {
     "extensions": [
       "./extensions/anthropic-extra/index.ts",
+      "./extensions/ask-user/index.ts",
       "./extensions/btw/index.ts",
       "./extensions/commit/index.ts",
       "./extensions/context/index.ts",

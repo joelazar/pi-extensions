@@ -24,6 +24,7 @@ pi install "$PWD"
 | Extension         | Trigger                       | What it does                                                                           |
 | ----------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
 | `anthropic-extra` | provider `anthropic-extra`    | A second Anthropic OAuth provider, so two Claude subscriptions can coexist             |
+| `ask-user`        | `ask_user` tool               | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off  |
 | `btw`             | `/btw`                        | Side-chat popover for a quick question that shouldn't derail the main thread           |
 | `commit`          | `/commit`, `/atomic-commit`   | Writes commit messages that match the repo's existing style                            |
 | `context`         | `/context`                    | Shows what is loaded in the session: extensions, skills, prompts, MCP servers          |
@@ -40,7 +41,7 @@ pi install "$PWD"
 | `thinking-back`   | `alt+shift+t`                 | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`       | `webfetch`, `websearch` tools | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
-Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
+Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `ask-user` from [khoi/pi](https://github.com/khoi/pi), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
 
 ## Layout
 
