@@ -542,12 +542,19 @@ async function doCommit(
 
   const commitResult = await runGit(pi, commitArgs);
   if (commitResult.code !== 0) {
-    report(
-      pi,
-      ctx,
-      `git commit failed: ${commitResult.stderr || commitResult.stdout}`,
-      "error",
+    const output = [commitResult.stdout, commitResult.stderr]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join("\n");
+    pi.sendMessage(
+      {
+        customType: "commit",
+        content: `git commit failed (exit ${commitResult.code}):\n\n\`\`\`\n${output}\n\`\`\``,
+        display: true,
+      },
+      { deliverAs: "nextTurn" },
     );
+    report(pi, ctx, "git commit failed — see output above", "error");
     return;
   }
 
