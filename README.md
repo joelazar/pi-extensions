@@ -36,7 +36,7 @@ pi install "$PWD"
 | `sandbox`         | `/sandbox`, `--sandbox`       | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
 | `save-md`         | `/save-md`                    | Saves the latest assistant response as a Markdown file                                 |
 | `skill-toggle`    | `/toggle-skills`              | Enables and disables skills from a picker instead of editing frontmatter               |
-| `spawn`           | `/spawn`                      | Opens a new pi session in a Ghostty tab or split                                       |
+| `spawn`           | `/spawn`                      | Opens a new pi session in a Herdr or Ghostty tab or split                              |
 | `split-fork`      | `/split-fork`                 | Forks the current session into a new tab or split, carrying the history over           |
 | `thinking-back`   | `alt+shift+t`                 | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`       | `webfetch`, `websearch` tools | Web search and page fetching through Kagi, with markdown, text, html, and image output |
@@ -45,7 +45,7 @@ Some of these started as other people's code. `btw`, `context`, and `split-fork`
 
 ## Layout
 
-The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` lists every entry point under its `pi` key, which is what pi reads.
+The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` lists every entry point under its `pi` key, which is what pi reads. `extensions/shared/` holds code imported by more than one extension and is not an extension itself; `shared/terminal.ts` opens tabs and splits through the `herdr` CLI when pi runs inside Herdr (`HERDR_ENV=1`) and through Ghostty AppleScript otherwise.
 
 ```bash
 npm run typecheck   # tsc across every workspace that has it
