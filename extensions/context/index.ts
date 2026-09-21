@@ -28,7 +28,6 @@ import {
   Text,
   matchesKey,
   type Component,
-  type TUI,
 } from "@earendil-works/pi-tui";
 import os from "node:os";
 import path from "node:path";
@@ -833,7 +832,6 @@ export function buildReportLines(
 }
 
 class ContextView implements Component {
-  private tui: TUI;
   private theme: any;
   private onDone: () => void;
   private data: ContextViewData;
@@ -841,8 +839,7 @@ class ContextView implements Component {
   private body: Text;
   private cachedWidth?: number;
 
-  constructor(tui: TUI, theme: any, data: ContextViewData, onDone: () => void) {
-    this.tui = tui;
+  constructor(theme: any, data: ContextViewData, onDone: () => void) {
     this.theme = theme;
     this.data = data;
     this.onDone = onDone;
@@ -1231,8 +1228,8 @@ export default function contextExtension(pi: ExtensionAPI) {
         return;
       }
 
-      await ctx.ui.custom<void>((tui, theme, _kb, done) => {
-        return new ContextView(tui, theme, viewData, done);
+      await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
+        return new ContextView(theme, viewData, done);
       });
     },
   });
