@@ -84,100 +84,118 @@ function getAgentDir(): string {
   return path.join(os.homedir(), ".pi", "agent");
 }
 
-async function readFileIfExists(
-  filePath: string,
-): Promise<{ path: string; content: string; bytes: number } | null> {
+/**
+ * Extension entry points pi would load from a directory: a `pi.extensions`
+ * manifest if present, otherwise an index file. Mirrors pi's loader.
+ */
+async function resolveExtensionEntries(dir: string): Promise<string[]> {
   try {
-    const buf = await fs.readFile(filePath);
-    return {
-      path: filePath,
-      content: buf.toString("utf8"),
-      bytes: buf.byteLength,
-    };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    return null;
+    const pkg = JSON.parse(
+      await fs.readFile(path.join(dir, "package.json"), "utf8"),
+    );
+    const declared = pkg?.pi?.extensions;
+    if (Array.isArray(declared)) {
+      const entries: string[] = [];
+      for (const rel of declared) {
+        if (typeof rel !== "string") continue;
+        const abs = path.resolve(dir, rel);
+        if (await exists(abs)) entries.push(abs);
+      }
+      if (entries.length > 0) return entries;
+    }
+  } catch {
+    // no manifest — fall through to index files
+  }
+  for (const name of ["index.ts", "index.js"]) {
+    const abs = path.join(dir, name);
+    if (await exists(abs)) return [abs];
+  }
+  return [];
+}
+
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
   }
 }
 
-async function loadProjectContextFiles(
-  cwd: string,
-): Promise<Array<{ path: string; tokens: number; bytes: number }>> {
-  const out: Array<{ path: string; tokens: number; bytes: number }> = [];
-  const seen = new Set<string>();
-
-  const loadFromDir = async (dir: string) => {
-    for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-      const p = path.join(dir, name);
-      const f = await readFileIfExists(p);
-      if (f && !seen.has(f.path)) {
-        seen.add(f.path);
-        out.push({
-          path: f.path,
-          tokens: estimateTokens(f.content),
-          bytes: f.bytes,
-        });
-        // pi loads at most one of those per dir
-        return;
-      }
-    }
-  };
-
-  await loadFromDir(getAgentDir());
-
-  // Ancestors: root → cwd (same order as pi)
-  const stack: string[] = [];
-  let current = path.resolve(cwd);
-  while (true) {
-    stack.push(current);
-    const parent = path.resolve(current, "..");
-    if (parent === current) break;
-    current = parent;
+async function discoverExtensionsInDir(dir: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
   }
-  stack.reverse();
-  for (const dir of stack) await loadFromDir(dir);
-
+  const out: string[] = [];
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if ((e.isFile() || e.isSymbolicLink()) && /\.[jt]s$/.test(e.name)) {
+      out.push(p);
+      continue;
+    }
+    if (e.isDirectory() || e.isSymbolicLink()) {
+      out.push(...(await resolveExtensionEntries(p)));
+    }
+  }
   return out;
 }
 
-function parseDisableModelInvocationFromFrontmatter(
-  content: string,
-): boolean {
-  // Minimal YAML scan: look for `disable-model-invocation: true` inside the
-  // leading `---` ... `---` block. Avoids pulling in a YAML parser.
-  if (!content.startsWith("---")) return false;
-  const end = content.indexOf("\n---", 3);
-  if (end < 0) return false;
-  const fm = content.slice(3, end);
-  for (const raw of fm.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const m = line.match(/^disable-model-invocation\s*:\s*(\S+)/i);
-    if (m) return m[1].toLowerCase() === "true";
+async function readSettingsExtensionPaths(file: string): Promise<string[]> {
+  try {
+    const settings = JSON.parse(await fs.readFile(file, "utf8"));
+    const list = settings?.extensions;
+    return Array.isArray(list)
+      ? list.filter((x: unknown): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
   }
-  return false;
 }
 
-async function readDisableModelInvocation(
-  filePath: string,
-): Promise<boolean> {
-  if (!filePath) return false;
-  try {
-    // Frontmatter sits at the top; read a small slice instead of the full file.
-    const fh = await fs.open(filePath, "r");
-    try {
-      const buf = Buffer.alloc(4096);
-      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
-      return parseDisableModelInvocationFromFrontmatter(
-        buf.slice(0, bytesRead).toString("utf8"),
-      );
-    } finally {
-      await fh.close();
+/**
+ * Extension files pi loads that register neither a slash command nor a tool.
+ * They are invisible to getCommands()/getAllTools(), so the discovery dirs and
+ * settings lists are replayed here. Package-manager specs (globs, `-`/`!`/`+`
+ * overrides, bare package names) are skipped — resolving those faithfully
+ * needs pi's package manager.
+ */
+export async function discoverSilentExtensionPaths(
+  cwd: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  out.push(
+    ...(await discoverExtensionsInDir(path.join(cwd, ".pi", "extensions"))),
+  );
+  out.push(
+    ...(await discoverExtensionsInDir(path.join(getAgentDir(), "extensions"))),
+  );
+
+  const configured = [
+    ...(await readSettingsExtensionPaths(
+      path.join(getAgentDir(), "settings.json"),
+    )),
+    ...(await readSettingsExtensionPaths(
+      path.join(cwd, ".pi", "settings.json"),
+    )),
+  ];
+  for (const spec of configured) {
+    if (/^[-!+]/.test(spec) || /[*?]/.test(spec)) continue;
+    if (!spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("~"))
+      continue;
+    const abs = normalizeReadPath(spec, cwd);
+    const stat = await fs.stat(abs).catch(() => null);
+    if (!stat) continue;
+    if (stat.isDirectory()) {
+      const entries = await resolveExtensionEntries(abs);
+      out.push(...(entries.length ? entries : await discoverExtensionsInDir(abs)));
+    } else {
+      out.push(abs);
     }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    return false;
   }
+  return [...new Set(out.map((p) => path.resolve(p)))];
 }
 
 function normalizeSkillName(name: string): string {
@@ -417,6 +435,7 @@ type ExtensionEntry = {
 export function collectExtensions(
   commands: Array<{ name: string; source: string; sourceInfo?: SourceInfo }>,
   tools: Array<{ name: string; sourceInfo?: SourceInfo }>,
+  discoveredPaths: string[] = [],
 ): ExtensionEntry[] {
   const byPath = new Map<string, ExtensionEntry>();
 
@@ -444,6 +463,16 @@ export function collectExtensions(
     // builtin/sdk tools are not extensions; they're attributed but not listed.
     if (isSyntheticSource(t.sourceInfo)) continue;
     entryFor(t.sourceInfo).tools.push(t.name);
+  }
+  // Extensions that only register hooks or renderers contribute no command
+  // and no tool, so they exist only as a file path on disk.
+  const known = new Set(
+    [...byPath.keys()]
+      .filter((k) => !k.startsWith("<"))
+      .map((k) => path.resolve(k)),
+  );
+  for (const p of discoveredPaths) {
+    if (!known.has(path.resolve(p))) entryFor({ path: p } as SourceInfo);
   }
 
   const entries = [...byPath.values()].map((e) => ({
@@ -726,7 +755,9 @@ export function buildReportLines(
   }
 
   section(`Extensions (${d.extensions.length})`);
-  lines.push(s.dim("  detected from registered commands and active tools"));
+  lines.push(
+    s.dim("  from registered commands, active tools, and discovered paths"),
+  );
   if (d.extensions.length === 0) {
     lines.push(ITEM + s.dim("(none)"));
   } else {
@@ -738,7 +769,11 @@ export function buildReportLines(
       lines.push(
         ITEM +
           s.value(e.label) +
-          (parts.length ? s.dim(`  ${parts.join("  ·  ")}`) : ""),
+          s.dim(
+            parts.length
+              ? `  ${parts.join("  ·  ")}`
+              : "  (no commands or tools)",
+          ),
       );
     }
   }
@@ -977,6 +1012,7 @@ export default function contextExtension(pi: ExtensionAPI) {
       const extensions = collectExtensions(
         commands,
         allTools.filter((t) => activeToolSet.has(t.name)),
+        await discoverSilentExtensionPaths(ctx.cwd),
       );
 
       ensureCaches(ctx as unknown as ExtensionContext, promptOptions);
