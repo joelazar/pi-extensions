@@ -609,8 +609,8 @@ type ContextViewData = {
     systemPromptTokens: number;
     toolsTokens: number;
     activeTools: number;
-    /** Active aliases whose flat source is also active (deduped on the wire). */
-    dedupedAliases: number;
+    /** Flat tools an active mcp alias replaces on the wire. */
+    replacedTools: number;
     /**
      * "measured": the provider already reported usage, which includes system
      * prompt + tool schemas, so we must not add our own estimates on top.
@@ -625,9 +625,11 @@ type ContextViewData = {
     name: string;
     tokens: number;
     source?: string;
-    /** Flat tool this mcp__ alias mirrors, when detected. */
+    /** Inactive flat tool this mcp__ alias mirrors, when detected. */
     aliasOf?: string;
-    /** false → excluded from the tools total (wire-deduplicated duplicate). */
+    /** Active alias that replaces this flat tool on the wire. */
+    replacedBy?: string;
+    /** false → not sent to the provider, so excluded from the tools total. */
     counted: boolean;
   }>;
   extensions: ExtensionEntry[];
@@ -712,19 +714,21 @@ export function buildReportLines(
     lines.push(
       s.label("Tools: ") +
         s.value(tok(u.toolsTokens)) +
-        s.label(` (${u.activeTools} active`) +
-        (u.dedupedAliases > 0
+        s.label(
+          ` (${u.activeTools - u.replacedTools} sent of ${u.activeTools} active`,
+        ) +
+        (u.replacedTools > 0
           ? s.label(", ") +
-            s.dim(`${u.dedupedAliases} aliases not double-counted`)
+            s.dim(`${u.replacedTools} replaced by mcp aliases`)
           : "") +
         s.label(")"),
     );
     for (const x of d.toolBreakdown) {
       if (!x.counted) {
-        // Wire-deduplicated alias, nested under its flat source line.
+        // Flat name the provider rejects, nested under the alias that ships.
         lines.push(
           "      " +
-            s.dim(`↳ ${x.name}  sent instead under Anthropic OAuth`),
+            s.dim(`↳ replaces ${x.name}, not sent under Anthropic OAuth`),
         );
         continue;
       }
@@ -1064,30 +1068,28 @@ export default function contextExtension(pi: ExtensionAPI) {
       const toolInfoByName = new Map(allTools.map((t) => [t.name, t] as const));
 
       // Detect mcp__ aliases of flat tools (see findAliasSource). When both
-      // sides are active the flat one is stripped from the wire, so only the
-      // alias' twin is counted once; when only the alias is active it *is*
-      // the real tool on the wire and counts normally.
+      // sides are active the alias is what reaches the provider and the flat
+      // twin is dropped, so the alias carries the token cost.
       const aliasSourceByName = new Map<
         string,
         { source: string; sourceActive: boolean }
       >();
+      const aliasByFlatName = new Map<string, string>();
       for (const name of activeToolNames) {
         const info = toolInfoByName.get(name);
         if (!info) continue;
         const src = findAliasSource(info, allTools);
-        if (src) {
-          aliasSourceByName.set(name, {
-            source: src.name,
-            sourceActive: activeToolSet.has(src.name),
-          });
-        }
+        if (!src) continue;
+        const sourceActive = activeToolSet.has(src.name);
+        aliasSourceByName.set(name, { source: src.name, sourceActive });
+        if (sourceActive) aliasByFlatName.set(src.name, name);
       }
 
       let toolsTokens = 0;
-      let dedupedAliases = 0;
+      let replacedTools = 0;
       type ToolLine = ContextViewData["toolBreakdown"][number];
       const countedLines: ToolLine[] = [];
-      const dedupedByFlatName = new Map<string, ToolLine>();
+      const replacedByAliasName = new Map<string, ToolLine>();
       for (const name of activeToolNames) {
         const info = toolInfoByName.get(name);
         const blob = [
@@ -1100,18 +1102,20 @@ export default function contextExtension(pi: ExtensionAPI) {
         ].join("\n");
         const tokens = estimateTokens(blob) + TOOL_OVERHEAD_TOKENS;
         const alias = aliasSourceByName.get(name);
+        const replacedBy = aliasByFlatName.get(name);
         const line: ToolLine = {
           name,
           tokens,
           // Attribute every tool to its provider so duplicate-looking tools
           // (e.g. an MCP tool and a native one) are distinguishable.
           source: info ? extensionLabel(info.sourceInfo?.path) : undefined,
-          aliasOf: alias?.source,
-          counted: !alias?.sourceActive,
+          aliasOf: alias && !alias.sourceActive ? alias.source : undefined,
+          replacedBy,
+          counted: !replacedBy,
         };
-        if (!line.counted) {
-          dedupedAliases++;
-          dedupedByFlatName.set(alias!.source, line);
+        if (replacedBy) {
+          replacedTools++;
+          replacedByAliasName.set(replacedBy, line);
         } else {
           toolsTokens += tokens;
           countedLines.push(line);
@@ -1120,18 +1124,18 @@ export default function contextExtension(pi: ExtensionAPI) {
       countedLines.sort(
         (a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name),
       );
-      // Interleave: each deduplicated alias goes right below its flat source.
+      // Interleave: each replaced flat tool goes right below its alias.
       const toolBreakdown: ToolLine[] = [];
       for (const line of countedLines) {
         toolBreakdown.push(line);
-        const dup = dedupedByFlatName.get(line.name);
-        if (dup) {
-          toolBreakdown.push(dup);
-          dedupedByFlatName.delete(line.name);
+        const replaced = replacedByAliasName.get(line.name);
+        if (replaced) {
+          toolBreakdown.push(replaced);
+          replacedByAliasName.delete(line.name);
         }
       }
-      // Safety net: any alias whose source line vanished still gets shown.
-      toolBreakdown.push(...dedupedByFlatName.values());
+      // Safety net: any replaced tool whose alias line vanished still shows.
+      toolBreakdown.push(...replacedByAliasName.values());
 
       // Once the provider has reported usage, ctx.getContextUsage() is
       // anchored to a real total that already includes the system prompt and
@@ -1172,7 +1176,7 @@ export default function contextExtension(pi: ExtensionAPI) {
               systemPromptTokens,
               toolsTokens,
               activeTools: activeToolNames.length,
-              dedupedAliases,
+              replacedTools,
               mode,
             }
           : null,
