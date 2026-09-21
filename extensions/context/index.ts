@@ -483,52 +483,62 @@ function renderUsageBar(
   return `${sysStr}${toolsStr}${conStr}${remStr}`;
 }
 
-function buildSystemPromptBreakdown(
+/**
+ * pi renders the system prompt as a preamble followed by `<name>…</name>`
+ * sections joined by blank lines. Splitting on that structure attributes every
+ * token to the section that actually carries it, instead of guessing with
+ * substring offsets that rot whenever pi reshapes the prompt.
+ */
+export function splitSystemPromptSections(prompt: string): {
+  preamble: string;
+  sections: Array<{ name: string; text: string }>;
+} {
+  const re = /(?:^|\n\n)<([a-z][a-z0-9_-]*)>\n([\s\S]*?)\n<\/\1>(?=\n\n|$)/g;
+  const sections: Array<{ name: string; text: string }> = [];
+  let firstIndex = prompt.length;
+  for (const m of prompt.matchAll(re)) {
+    if (m.index !== undefined && m.index < firstIndex) firstIndex = m.index;
+    sections.push({ name: m[1], text: m[0].replace(/^\n\n/, "") });
+  }
+  return { preamble: prompt.slice(0, firstIndex), sections };
+}
+
+const SECTION_LABELS: Record<string, string> = {
+  tools: "tool list",
+  rules: "rules",
+  docs: "pi docs pointers",
+  addendum: "appendSystemPrompt",
+  project_context: "AGENTS/context files",
+  cwd: "cwd",
+};
+
+export function buildSystemPromptBreakdown(
   options: BuildSystemPromptOptions | null,
   fullSystemPrompt: string,
-  agentTokens: number,
   skillsCount: number,
 ): Array<{ label: string; tokens: number }> {
   const out: Array<{ label: string; tokens: number }> = [];
   if (!fullSystemPrompt) return out;
 
-  const total = estimateTokens(fullSystemPrompt);
-  const appendTokens = estimateTokens(options?.appendSystemPrompt ?? "");
-  const customTokens = estimateTokens(options?.customPrompt ?? "");
-  const skillsMarker = "<available_skills>";
-  const skillsTokens = fullSystemPrompt.includes(skillsMarker)
-    ? estimateTokens(
-        fullSystemPrompt.slice(fullSystemPrompt.indexOf(skillsMarker)),
-      )
-    : 0;
-  const cwdDateMatch = fullSystemPrompt.match(
-    /\nCurrent date: .*\nCurrent working directory: .*$/s,
-  );
-  const cwdDateTokens = estimateTokens(cwdDateMatch?.[0] ?? "");
-
-  if (customTokens > 0)
-    out.push({ label: "custom prompt", tokens: customTokens });
-  else {
-    const baseTokens = Math.max(
-      0,
-      total - appendTokens - agentTokens - skillsTokens - cwdDateTokens,
-    );
-    out.push({ label: "pi base prompt/docs/guidelines", tokens: baseTokens });
-  }
-  if (appendTokens > 0)
-    out.push({ label: "appendSystemPrompt", tokens: appendTokens });
-  if (agentTokens > 0)
-    out.push({ label: "AGENTS/context files", tokens: agentTokens });
-  if (skillsTokens > 0)
+  const { preamble, sections } = splitSystemPromptSections(fullSystemPrompt);
+  const preambleTokens = estimateTokens(preamble);
+  if (preambleTokens > 0)
     out.push({
-      label: `skills index (${skillsCount} model-invocable)`,
-      tokens: skillsTokens,
+      label: options?.customPrompt ? "custom prompt" : "pi base prompt",
+      tokens: preambleTokens,
     });
-  if (cwdDateTokens > 0)
-    out.push({ label: "date + cwd", tokens: cwdDateTokens });
+  for (const s of sections) {
+    out.push({
+      label:
+        s.name === "skills"
+          ? `skills index (${skillsCount} model-invocable)`
+          : (SECTION_LABELS[s.name] ?? s.name),
+      tokens: estimateTokens(s.text),
+    });
+  }
 
   const accounted = out.reduce((a, x) => a + x.tokens, 0);
-  const drift = total - accounted;
+  const drift = estimateTokens(fullSystemPrompt) - accounted;
   if (Math.abs(drift) > 10)
     out.push({ label: "unclassified/rounding", tokens: drift });
   return out;
@@ -600,7 +610,6 @@ type ContextViewData = {
     percent: number;
     remainingTokens: number;
     systemPromptTokens: number;
-    agentTokens: number;
     toolsTokens: number;
     activeTools: number;
     /** Active aliases whose flat source is also active (deduped on the wire). */
@@ -1073,7 +1082,6 @@ export default function contextExtension(pi: ExtensionAPI) {
         path: shortenPath(f.path, ctx.cwd),
         tokens: f.tokens,
       }));
-      const agentTokens = agentFiles.reduce((a, f) => a + f.tokens, 0);
 
       const systemPrompt = ctx.getSystemPrompt();
       const systemPromptTokens = systemPrompt
@@ -1097,7 +1105,6 @@ export default function contextExtension(pi: ExtensionAPI) {
       const systemBreakdown = buildSystemPromptBreakdown(
         lastPromptOptions,
         systemPrompt,
-        agentTokens,
         skillBreakdown.length,
       );
 
@@ -1218,7 +1225,6 @@ export default function contextExtension(pi: ExtensionAPI) {
               percent,
               remainingTokens,
               systemPromptTokens,
-              agentTokens,
               toolsTokens,
               activeTools: activeToolNames.length,
               dedupedAliases,
