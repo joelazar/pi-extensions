@@ -423,7 +423,6 @@ export function findAliasSource(
 type ExtensionEntry = {
   label: string;
   path: string;
-  scope?: string;
   commands: string[];
   tools: string[];
 };
@@ -443,13 +442,7 @@ export function collectExtensions(
     const p = info?.path ?? "<unknown>";
     let e = byPath.get(p);
     if (!e) {
-      e = {
-        label: extensionLabel(p),
-        path: p,
-        scope: info?.scope,
-        commands: [],
-        tools: [],
-      };
+      e = { label: extensionLabel(p), path: p, commands: [], tools: [] };
       byPath.set(p, e);
     }
     return e;
