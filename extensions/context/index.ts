@@ -667,6 +667,28 @@ function tok(n: number): string {
 }
 
 /**
+ * Split the reported total into system / tools / conversation. In "measured"
+ * mode the provider total already contains the system prompt and tool schemas,
+ * so they are carved out of it rather than added.
+ */
+function splitUsage(u: NonNullable<ContextViewData["usage"]>): {
+  system: number;
+  tools: number;
+  convo: number;
+} {
+  const system = Math.min(u.systemPromptTokens, u.effectiveTokens);
+  const tools = Math.max(
+    0,
+    Math.min(u.toolsTokens, u.effectiveTokens - system),
+  );
+  return {
+    system,
+    tools,
+    convo: Math.max(0, u.effectiveTokens - system - tools),
+  };
+}
+
+/**
  * Single source of truth for the report layout. The TUI passes a themed
  * styler (plus a pre-rendered usage bar); the headless path passes
  * PLAIN_STYLER. Keeping one renderer stops the two outputs from drifting.
@@ -740,6 +762,11 @@ export function buildReportLines(
           (x.aliasOf ? s.dim(`  alias of ${x.aliasOf} (inactive)`) : ""),
       );
     }
+    lines.push(
+      s.label("Messages: ") +
+        s.value(tok(splitUsage(u).convo)) +
+        s.dim("  conversation so far"),
+    );
   }
 
   section(`Context files (${d.agentFiles.length})`);
@@ -858,12 +885,7 @@ class ContextView implements Component {
     const u = this.data.usage;
     if (u && u.contextWindow > 0) {
       const barWidth = Math.max(10, Math.min(36, width - 10));
-      // Split the reported total into system / tools / conversation. In
-      // "measured" mode the provider total already contains the system prompt
-      // and tool schemas, so they are carved out of it rather than added.
-      const sys = Math.min(u.systemPromptTokens, u.effectiveTokens);
-      const tools = Math.max(0, Math.min(u.toolsTokens, u.effectiveTokens - sys));
-      const convo = Math.max(0, u.effectiveTokens - sys - tools);
+      const { system: sys, tools, convo } = splitUsage(u);
       bar =
         renderUsageBar(
           theme,
