@@ -575,31 +575,6 @@ function buildSkillPromptBreakdown(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function buildSkillPromptBreakdownFromCommands(
-  commands: ReturnType<ExtensionAPI["getCommands"]>,
-  cwd: string,
-  userInvokedByName?: Map<string, boolean>,
-): Array<{ name: string; tokens: number }> {
-  return commands
-    .filter((c) => c.source === "skill")
-    .filter((c) => !userInvokedByName?.get(normalizeSkillName(c.name)))
-    .map((c) => {
-      const name = normalizeSkillName(c.name);
-      const filePath = c.sourceInfo?.path
-        ? normalizeReadPath(c.sourceInfo.path, cwd)
-        : "";
-      const entry = [
-        "  <skill>",
-        `    <name>${escapeXmlForPrompt(name)}</name>`,
-        `    <description>${escapeXmlForPrompt(c.description ?? "")}</description>`,
-        `    <location>${escapeXmlForPrompt(filePath)}</location>`,
-        "  </skill>",
-      ].join("\n");
-      return { name, tokens: estimateTokens(entry) };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
 type ContextViewData = {
   usage: {
     /** Context estimate from ctx.getContextUsage() (provider-anchored once a reply exists). */
@@ -920,7 +895,10 @@ export default function contextExtension(pi: ExtensionAPI) {
   // instead of re-scanning cwd.
   let lastPromptOptions: BuildSystemPromptOptions | null = null;
 
-  const ensureCaches = (ctx: ExtensionContext) => {
+  const ensureCaches = (
+    ctx: ExtensionContext,
+    options?: BuildSystemPromptOptions,
+  ) => {
     const sid = ctx.sessionManager.getSessionId();
     if (sid !== lastSessionId) {
       lastSessionId = sid;
@@ -928,10 +906,10 @@ export default function contextExtension(pi: ExtensionAPI) {
       cachedSkillIndex = [];
       lastPromptOptions = null;
     }
-    // Prefer skill index from last prompt snapshot; fall back to command
+    // Prefer skill index from the prompt options; fall back to the command
     // registry when no agent turn has run yet this session.
     const snapshotIndex = skillIndexFromPromptOptions(
-      lastPromptOptions?.skills,
+      (options ?? lastPromptOptions)?.skills,
     );
     if (snapshotIndex.length > 0) {
       cachedSkillIndex = snapshotIndex;
@@ -987,10 +965,12 @@ export default function contextExtension(pi: ExtensionAPI) {
     description: "Show loaded context overview",
     handler: async (_args, ctx: ExtensionCommandContext) => {
       const commands = pi.getCommands();
-      const skillCmds = commands.filter((c) => c.source === "skill");
       const allTools = pi.getAllTools();
       const activeToolNames = pi.getActiveTools();
       const activeToolSet = new Set(activeToolNames);
+      // The per-turn snapshot reflects extension mutations; the base options
+      // are always available, including before the first agent turn.
+      const promptOptions = lastPromptOptions ?? ctx.getSystemPromptOptions();
 
       // Extensions are identified by their source file and grouped with
       // everything they contribute, so every line is self-explanatory.
@@ -999,102 +979,38 @@ export default function contextExtension(pi: ExtensionAPI) {
         allTools.filter((t) => activeToolSet.has(t.name)),
       );
 
-      // Build a name -> source dir map from the skill index so we can
-      // show users where each skill is loaded from.
-      ensureCaches(ctx as unknown as ExtensionContext);
+      ensureCaches(ctx as unknown as ExtensionContext, promptOptions);
+      const promptSkills = promptOptions.skills ?? [];
       const skillSourceByName = new Map<string, string>();
-      for (const s of cachedSkillIndex) {
-        if (s.name && s.skillDir) skillSourceByName.set(s.name, s.skillDir);
+      for (const s of promptSkills) {
+        const n = normalizeSkillName(s.name);
+        if (n && s.baseDir) skillSourceByName.set(n, path.resolve(s.baseDir));
       }
-      // Also fold in directly-known sources from the prompt snapshot.
-      if (lastPromptOptions?.skills?.length) {
-        for (const s of lastPromptOptions.skills) {
-          const n = normalizeSkillName(s.name);
-          if (n && s.baseDir && !skillSourceByName.has(n)) {
-            skillSourceByName.set(n, path.resolve(s.baseDir));
-          }
-        }
-      }
+      // Skills flagged disableModelInvocation stay out of the system prompt
+      // but remain callable via /skill:name.
+      const skills = promptSkills
+        .map((s) => {
+          const name = normalizeSkillName(s.name);
+          return {
+            name,
+            source: skillSourceByName.has(name)
+              ? shortenHome(skillSourceByName.get(name)!)
+              : undefined,
+            userInvoked: !!s.disableModelInvocation,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
 
-      // Prefer skills from last prompt snapshot (the set pi actually
-      // formatted into the system prompt) over the command registry.
-      // Track which ones are user-invoked only (disableModelInvocation):
-      // those don't appear in the system prompt but can still be triggered
-      // via /skill:name.
-      const userInvokedByName = new Map<string, boolean>();
-      if (lastPromptOptions?.skills?.length) {
-        for (const s of lastPromptOptions.skills) {
-          userInvokedByName.set(
-            normalizeSkillName(s.name),
-            !!s.disableModelInvocation,
-          );
-        }
-      }
-      // Fill in any skills we don't have a snapshot flag for by reading
-      // the SKILL.md frontmatter directly. This covers the common case of
-      // /context being invoked before any agent turn has run, when
-      // `lastPromptOptions` is still null.
-      const skillFileByName = new Map<string, string>();
-      for (const c of skillCmds) {
-        const n = normalizeSkillName(c.name);
-        const p = c.sourceInfo?.path
-          ? normalizeReadPath(c.sourceInfo.path, ctx.cwd)
-          : "";
-        if (n && p && !skillFileByName.has(n)) skillFileByName.set(n, p);
-      }
-      if (lastPromptOptions?.skills?.length) {
-        for (const s of lastPromptOptions.skills) {
-          const n = normalizeSkillName(s.name);
-          if (n && s.filePath && !skillFileByName.has(n)) {
-            skillFileByName.set(n, path.resolve(s.filePath));
-          }
-        }
-      }
-      await Promise.all(
-        [...skillFileByName.entries()].map(async ([n, p]) => {
-          if (userInvokedByName.has(n)) return;
-          userInvokedByName.set(n, await readDisableModelInvocation(p));
-        }),
-      );
-      const skillNames = (
-        lastPromptOptions?.skills?.length
-          ? lastPromptOptions.skills.map((s) => normalizeSkillName(s.name))
-          : skillCmds.map((c) => normalizeSkillName(c.name))
-      ).sort((a, b) => a.localeCompare(b));
-      const skills = skillNames.map((name) => ({
-        name,
-        source: skillSourceByName.get(name)
-          ? shortenHome(skillSourceByName.get(name)!)
-          : undefined,
-        userInvoked: userInvokedByName.get(name) ?? false,
-      }));
-
-      // Prefer context files from last prompt snapshot — that's exactly
-      // what pi loaded into the system prompt. Fall back to disk scan if
-      // no agent turn has run yet this session.
-      const agentFiles =
-        lastPromptOptions?.contextFiles?.map((f) => ({
-          path: f.path,
-          tokens: estimateTokens(f.content),
-          bytes: Buffer.byteLength(f.content, "utf8"),
-        })) ?? (await loadProjectContextFiles(ctx.cwd));
-      const agentFilesShown = agentFiles.map((f) => ({
+      const agentFilesShown = (promptOptions.contextFiles ?? []).map((f) => ({
         path: shortenPath(f.path, ctx.cwd),
-        tokens: f.tokens,
+        tokens: estimateTokens(f.content),
       }));
 
       const systemPrompt = ctx.getSystemPrompt();
       const systemPromptTokens = systemPrompt
         ? estimateTokens(systemPrompt)
         : 0;
-      const skillBreakdownRaw = lastPromptOptions?.skills?.length
-        ? buildSkillPromptBreakdown(lastPromptOptions.skills)
-        : buildSkillPromptBreakdownFromCommands(
-            commands,
-            ctx.cwd,
-            userInvokedByName,
-          );
-      const skillBreakdown = skillBreakdownRaw.map((x) => ({
+      const skillBreakdown = buildSkillPromptBreakdown(promptSkills).map((x) => ({
         ...x,
         source: skillSourceByName.get(x.name)
           ? shortenHome(skillSourceByName.get(x.name)!)
@@ -1103,7 +1019,7 @@ export default function contextExtension(pi: ExtensionAPI) {
       // Only model-invocable skills contribute to the <available_skills>
       // block, so that's the count the breakdown label should show.
       const systemBreakdown = buildSystemPromptBreakdown(
-        lastPromptOptions,
+        promptOptions,
         systemPrompt,
         skillBreakdown.length,
       );
