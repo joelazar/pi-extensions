@@ -14,8 +14,14 @@ export interface LaunchRequest {
   cwd: string;
   /** Shell command line to run in the new terminal, without trailing newline. */
   command: string;
-  /** Tab label; only Herdr honors it. */
+  /**
+   * Tab label; only Herdr honors it, and only when `lockLabel` is set.
+   * Herdr's auto-title plugin locks any tab that was created with an explicit
+   * label, so by default the label is dropped and auto-titling stays on.
+   */
   label?: string;
+  /** Pass the label to Herdr even though it disables auto-titling. */
+  lockLabel?: boolean;
 }
 
 const GHOSTTY_SPLIT_SCRIPT = `on run argv
@@ -70,22 +76,28 @@ function failureReason(result: { stdout?: string; stderr?: string }, fallback: s
   return result.stderr?.trim() || result.stdout?.trim() || fallback;
 }
 
-async function herdr(pi: ExtensionAPI, args: string[]): Promise<unknown> {
+async function herdr(pi: ExtensionAPI, args: string[]): Promise<string> {
   const result = await pi.exec("herdr", args);
   if (result.code !== 0) {
     throw new Error(failureReason(result, `herdr ${args[0]} ${args[1]} failed`));
   }
+  return result.stdout;
+}
+
+/** Run a herdr command that is expected to answer with a JSON envelope. */
+async function herdrJson(pi: ExtensionAPI, args: string[]): Promise<unknown> {
+  const stdout = await herdr(pi, args);
   try {
-    return JSON.parse(result.stdout);
+    return JSON.parse(stdout);
   } catch {
-    throw new Error(`herdr returned non-JSON output: ${result.stdout.trim()}`);
+    throw new Error(`herdr returned non-JSON output: ${stdout.trim()}`);
   }
 }
 
 async function launchHerdr(pi: ExtensionAPI, req: LaunchRequest): Promise<void> {
   let paneId: string | undefined;
   if (req.mode === "split") {
-    const res = (await herdr(pi, [
+    const res = (await herdrJson(pi, [
       "pane",
       "split",
       "--current",
@@ -98,8 +110,8 @@ async function launchHerdr(pi: ExtensionAPI, req: LaunchRequest): Promise<void> 
     paneId = res.result?.pane?.pane_id;
   } else {
     const args = ["tab", "create", "--cwd", req.cwd, "--focus"];
-    if (req.label) args.push("--label", req.label);
-    const res = (await herdr(pi, args)) as {
+    if (req.label && req.lockLabel) args.push("--label", req.label);
+    const res = (await herdrJson(pi, args)) as {
       result?: { root_pane?: { pane_id?: string } };
     };
     paneId = res.result?.root_pane?.pane_id;
