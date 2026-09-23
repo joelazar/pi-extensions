@@ -29,6 +29,7 @@
       "./extensions/export-md/index.ts",
       "./extensions/footer/index.ts",
       "./extensions/move-session/index.ts",
+      "./extensions/pi-claude-bridge/src/index.ts",
       "./extensions/pr-create/index.ts",
       "./extensions/rtk/index.ts",
       "./extensions/sandbox/index.ts",
