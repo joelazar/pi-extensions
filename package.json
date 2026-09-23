@@ -34,6 +34,7 @@
       "./extensions/rtk/index.ts",
       "./extensions/sandbox/index.ts",
       "./extensions/save-md/index.ts",
+      "./extensions/session-name/index.ts",
       "./extensions/skill-toggle/src/index.ts",
       "./extensions/spawn/index.ts",
       "./extensions/split-fork/index.ts",

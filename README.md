@@ -37,13 +37,14 @@ pi install "$PWD"
 | `rtk`                 | bash rewriting                | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
 | `sandbox`             | `/sandbox`, `--sandbox`       | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
 | `save-md`             | `/save-md`                    | Saves the latest assistant response as a Markdown file                                 |
+| `session-name`        | auto, `/rename`               | Names the session (and Herdr pane title) after the first exchange; `/rename` redoes it |
 | `skill-toggle`        | `/toggle-skills`              | Enables and disables skills from a picker instead of editing frontmatter               |
 | `spawn`               | `/spawn`                      | Opens a new pi session in a Herdr or Ghostty tab or split                              |
 | `split-fork`          | `/split-fork`                 | Forks the current session into a new tab or split, carrying the history over           |
 | `thinking-back`       | `alt+shift+t`                 | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`           | `webfetch`, `websearch` tools | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
-Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements`, `move-session`, and `pi-claude-bridge` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
+Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements`, `move-session`, and `pi-claude-bridge` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
 
 ## Layout
 
