@@ -15,7 +15,7 @@ const REVIEWERS_FILE =
     "pr-create/reviewers.conf",
   );
 
-const MODELS = ["anthropic-extra/claude-opus-5", "anthropic/claude-opus-5"];
+const MODELS = ["anthropic-extra/claude-opus-5-5", "anthropic/claude-opus-5-5"];
 
 const ALLOWED_TYPES = [
   "feat",
