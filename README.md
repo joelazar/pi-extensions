@@ -17,31 +17,31 @@ npm install
 pi install "$PWD"
 ```
 
-`npm install` matters: `web-tools` and `sandbox` have real runtime dependencies, and pi does not install them for you when a package comes from a local path.
+`npm install` matters: `web-tools`, `sandbox`, and `editor-enhancements` have real runtime dependencies, and pi does not install them for you when a package comes from a local path.
 
 ## What's in here
 
-| Extension         | Trigger                       | What it does                                                                           |
-| ----------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
-| `anthropic-extra` | provider `anthropic-extra`    | A second Anthropic OAuth provider, so two Claude subscriptions can coexist             |
-| `ask-user`        | `ask_user` tool               | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off  |
-| `btw`             | `/btw`                        | Side-chat popover for a quick question that shouldn't derail the main thread           |
-| `commit`          | `/commit`, `/atomic-commit`   | Writes commit messages that match the repo's existing style                            |
-| `context`         | `/context`                    | Shows what is loaded in the session: extensions, skills, prompts, MCP servers          |
-| `cwd-history`     | prompt history                | Seeds editor history with prompts from other sessions in the same directory            |
-| `export-md`       | `/md`, `ctrl+shift+m`         | Renders the session to Markdown and opens it                                           |
-| `footer`          | TUI footer                    | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files               |
-| `pr-create`       | `/pr-create`                  | Front-end for my `pr-create` script using pi's dialogs instead of gum                  |
-| `rtk`             | bash rewriting                | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
-| `sandbox`         | `/sandbox`, `--sandbox`       | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
-| `save-md`         | `/save-md`                    | Saves the latest assistant response as a Markdown file                                 |
-| `skill-toggle`    | `/toggle-skills`              | Enables and disables skills from a picker instead of editing frontmatter               |
-| `spawn`           | `/spawn`                      | Opens a new pi session in a Herdr or Ghostty tab or split                              |
-| `split-fork`      | `/split-fork`                 | Forks the current session into a new tab or split, carrying the history over           |
-| `thinking-back`   | `alt+shift+t`                 | Cycles the thinking level backwards, since the built-in binding only goes forward      |
-| `web-tools`       | `webfetch`, `websearch` tools | Web search and page fetching through Kagi, with markdown, text, html, and image output |
+| Extension             | Trigger                       | What it does                                                                           |
+| --------------------- | ----------------------------- | -------------------------------------------------------------------------------------- |
+| `anthropic-extra`     | provider `anthropic-extra`    | A second Anthropic OAuth provider, so two Claude subscriptions can coexist             |
+| `ask-user`            | `ask_user` tool               | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off  |
+| `btw`                 | `/btw`                        | Side-chat popover for a quick question that shouldn't derail the main thread           |
+| `commit`              | `/commit`, `/atomic-commit`   | Writes commit messages that match the repo's existing style                            |
+| `context`             | `/context`                    | Shows what is loaded in the session: extensions, skills, prompts, MCP servers          |
+| `editor-enhancements` | editor, `@`, `!`, `alt+v`     | Custom editor: `@` file picker, shell completions, raw paste, cwd prompt history       |
+| `export-md`           | `/md`, `ctrl+shift+m`         | Renders the session to Markdown and opens it                                           |
+| `footer`              | TUI footer                    | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files              |
+| `pr-create`           | `/pr-create`                  | Front-end for my `pr-create` script using pi's dialogs instead of gum                  |
+| `rtk`                 | bash rewriting                | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
+| `sandbox`             | `/sandbox`, `--sandbox`       | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
+| `save-md`             | `/save-md`                    | Saves the latest assistant response as a Markdown file                                 |
+| `skill-toggle`        | `/toggle-skills`              | Enables and disables skills from a picker instead of editing frontmatter               |
+| `spawn`               | `/spawn`                      | Opens a new pi session in a Herdr or Ghostty tab or split                              |
+| `split-fork`          | `/split-fork`                 | Forks the current session into a new tab or split, carrying the history over           |
+| `thinking-back`       | `alt+shift+t`                 | Cycles the thinking level backwards, since the built-in binding only goes forward      |
+| `web-tools`           | `webfetch`, `websearch` tools | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
-Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `ask-user` from [khoi/pi](https://github.com/khoi/pi), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
+Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
 
 ## Layout
 
