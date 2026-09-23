@@ -31,6 +31,7 @@ pi install "$PWD"
 | `editor-enhancements` | editor, `@`, `!`, `alt+v`     | Custom editor: `@` file picker, shell completions, raw paste, cwd prompt history       |
 | `export-md`           | `/md`, `ctrl+shift+m`         | Renders the session to Markdown and opens it                                           |
 | `footer`              | TUI footer                    | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files              |
+| `move-session`        | `/move-session <dir>`         | Moves the current session to another cwd and relaunches pi there                       |
 | `pr-create`           | `/pr-create`                  | Front-end for my `pr-create` script using pi's dialogs instead of gum                  |
 | `rtk`                 | bash rewriting                | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
 | `sandbox`             | `/sandbox`, `--sandbox`       | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
@@ -41,7 +42,7 @@ pi install "$PWD"
 | `thinking-back`       | `alt+shift+t`                 | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`           | `webfetch`, `websearch` tools | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
-Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
+Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements` and `move-session` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each file keeps a `Source:` header pointing at where it came from.
 
 ## Layout
 
