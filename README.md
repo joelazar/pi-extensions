@@ -49,7 +49,7 @@ Some of these started as other people's code. `btw`, `context`, and `split-fork`
 
 ## Layout
 
-The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` lists every entry point under its `pi` key, which is what pi reads. `extensions/shared/` holds code imported by more than one extension and is not an extension itself; `shared/terminal.ts` opens tabs and splits through the `herdr` CLI when pi runs inside Herdr (`HERDR_ENV=1`) and through Ghostty AppleScript otherwise.
+The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` globs `extensions/*/index.ts` and `extensions/*/src/index.ts` under its `pi` key, so a new extension loads without editing it. `extensions/shared/` holds code imported by more than one extension and is not an extension itself; `shared/terminal.ts` opens tabs and splits through the `herdr` CLI when pi runs inside Herdr (`HERDR_ENV=1`) and through Ghostty AppleScript otherwise.
 
 ## Models
 

@@ -20,27 +20,8 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/anthropic-extra/index.ts",
-      "./extensions/ask-user/index.ts",
-      "./extensions/btw/index.ts",
-      "./extensions/commit/index.ts",
-      "./extensions/context/index.ts",
-      "./extensions/editor-enhancements/index.ts",
-      "./extensions/export-md/index.ts",
-      "./extensions/footer/index.ts",
-      "./extensions/move-session/index.ts",
-      "./extensions/pi-claude-bridge/src/index.ts",
-      "./extensions/pr-create/index.ts",
-      "./extensions/rtk/index.ts",
-      "./extensions/sandbox/index.ts",
-      "./extensions/save-md/index.ts",
-      "./extensions/session-recall/index.ts",
-      "./extensions/session-name/index.ts",
-      "./extensions/skill-toggle/src/index.ts",
-      "./extensions/spawn/index.ts",
-      "./extensions/split-fork/index.ts",
-      "./extensions/thinking-back/index.ts",
-      "./extensions/web-tools/index.ts"
+      "./extensions/*/index.ts",
+      "./extensions/*/src/index.ts"
     ]
   },
   "peerDependencies": {
