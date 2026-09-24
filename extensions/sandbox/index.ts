@@ -11,8 +11,9 @@
  *   { "autostart": false }
  *
  * The --sandbox / --no-sandbox CLI flag overrides config.json for a single run.
- * /sandbox toggles the sandbox on or off at runtime. When off, tools run on
- * the host; when on, they run inside the VM.
+ * /sandbox toggles the sandbox on or off for the current session only. When
+ * off, tools run on the host; when on, they run inside the VM.
+ * /sandbox autostart on|off persists the autostart setting to config.json.
  *
  * Extra host directories can be mounted into the VM at their own absolute path,
  * either persistently via config.json:
@@ -27,7 +28,7 @@
  *   - QEMU installed (for example, `brew install qemu` on macOS)
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { RealFSProvider, VM } from "@earendil-works/gondolin";
@@ -47,20 +48,30 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 const GUEST_WORKSPACE = "/workspace";
+const CONFIG_PATH = path.join(import.meta.dirname, "config.json");
+
+function readRawConfig(): Record<string, unknown> {
+  try {
+    const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    return config && typeof config === "object" ? config : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAutostart(autostart: boolean): void {
+  const config = { ...readRawConfig(), autostart };
+  writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`);
+}
 
 function loadConfig(): { autostart: boolean; mounts: string[] } {
-  const configPath = path.join(import.meta.dirname, "config.json");
-  try {
-    const config = JSON.parse(readFileSync(configPath, "utf8"));
-    const mounts = Array.isArray(config.mounts)
-      ? config.mounts.filter(
-          (entry: unknown): entry is string => typeof entry === "string",
-        )
-      : [];
-    return { autostart: config.autostart === true, mounts };
-  } catch {
-    return { autostart: false, mounts: [] };
-  }
+  const config = readRawConfig();
+  const mounts = Array.isArray(config.mounts)
+    ? config.mounts.filter(
+        (entry: unknown): entry is string => typeof entry === "string",
+      )
+    : [];
+  return { autostart: config.autostart === true, mounts };
 }
 
 function expandHome(input: string): string {
@@ -395,16 +406,42 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify(`Unmounted ${host}.`, "info");
   }
 
+  function setAutostart(ctx: ExtensionContext, value: string): void {
+    if (!value) {
+      const current = readRawConfig().autostart === true;
+      ctx.ui.notify(
+        `Sandbox autostart is ${current ? "on" : "off"}. Usage: /sandbox autostart on|off`,
+        "info",
+      );
+      return;
+    }
+    if (value !== "on" && value !== "off") {
+      ctx.ui.notify("Usage: /sandbox autostart on|off", "warning");
+      return;
+    }
+    saveAutostart(value === "on");
+    ctx.ui.notify(
+      `Sandbox autostart ${value}. Applies to new sessions; use /sandbox to toggle this one.`,
+      "info",
+    );
+  }
+
   pi.registerCommand("sandbox", {
     description:
-      "Toggle the sandbox VM, or manage mounts: mount <dir> | unmount <dir> | list",
+      "Toggle the sandbox for this session, set autostart on|off, or manage mounts: mount <dir> | unmount <dir> | list",
     getArgumentCompletions: (prefix) => {
-      const sub = ["mount", "unmount", "list"];
-      if (!prefix.includes(" "))
-        return sub
-          .filter((s) => s.startsWith(prefix))
-          .map((s) => ({ value: s, label: s }));
-      return null;
+      const options = [
+        "autostart",
+        "autostart on",
+        "autostart off",
+        "mount",
+        "unmount",
+        "list",
+      ];
+      const matches = options
+        .filter((s) => s.startsWith(prefix))
+        .map((s) => ({ value: s, label: s }));
+      return matches.length > 0 ? matches : null;
     },
     handler: async (args, ctx) => {
       ui = ctx.ui;
@@ -414,6 +451,8 @@ export default function (pi: ExtensionAPI) {
       switch (sub) {
         case "":
           return toggleSandbox(ctx);
+        case "autostart":
+          return setAutostart(ctx, target);
         case "mount":
           return mountDir(ctx, target);
         case "unmount":
@@ -425,7 +464,7 @@ export default function (pi: ExtensionAPI) {
           return;
         default:
           ctx.ui.notify(
-            `Unknown subcommand: ${sub}. Use mount, unmount, or list.`,
+            `Unknown subcommand: ${sub}. Use autostart, mount, unmount, or list.`,
             "warning",
           );
       }
