@@ -1,5 +1,4 @@
-// Source: w-winter/dot314 (https://github.com/w-winter/dot314)
-//   Path: extensions/move-session.ts
+// Source: https://github.com/w-winter/dot314/blob/57551399fb31/extensions/move-session.ts
 /**
  * Session Move Extension
  *

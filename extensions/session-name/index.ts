@@ -1,5 +1,4 @@
-// Source: danielcherubini/pi-archimedes (https://github.com/danielcherubini/pi-archimedes)
-//   Path: packages/session-name/src/index.ts
+// Source: https://github.com/danielcherubini/pi-archimedes/blob/cad18609c6b1/packages/session-name/src/index.ts
 /**
  * Session Name
  *

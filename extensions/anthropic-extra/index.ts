@@ -1,5 +1,4 @@
-// Source: earendil-works/pi-mono (https://github.com/earendil-works/pi-mono)
-//   Path: packages/coding-agent/examples/extensions/custom-provider-anthropic/index.ts
+// Source: https://github.com/earendil-works/pi/blob/7c696c00f34c/packages/coding-agent/examples/extensions/custom-provider-anthropic/index.ts
 /**
  * Extra Anthropic OAuth Provider
  *

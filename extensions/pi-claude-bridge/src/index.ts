@@ -1,5 +1,4 @@
-// Source: w-winter/dot314 (https://github.com/w-winter/dot314)
-//   Path: extensions/pi-claude-bridge/
+// Source: https://github.com/w-winter/dot314/tree/e79b889b7534/extensions/pi-claude-bridge
 import {
 	getCurrentSystemPrompt,
 	getCurrentTools,

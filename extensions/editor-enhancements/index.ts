@@ -1,5 +1,4 @@
-// Source: w-winter/dot314 (https://github.com/w-winter/dot314)
-//   Path: extensions/editor-enhancements/
+// Source: https://github.com/w-winter/dot314/tree/57551399fb31/extensions/editor-enhancements
 // Prompt history seeding merged in from the former cwd-history extension.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";

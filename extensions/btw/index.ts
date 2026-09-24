@@ -1,5 +1,4 @@
-// Source: mitsuhiko/agent-stuff (https://github.com/mitsuhiko/agent-stuff)
-//   Path: extensions/btw.ts
+// Source: https://github.com/mitsuhiko/agent-stuff/blob/a3f8ab1108a4/extensions/btw.ts
 
 import {
   buildSessionContext,

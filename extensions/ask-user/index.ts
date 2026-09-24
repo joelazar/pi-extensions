@@ -1,5 +1,5 @@
-// Source: khoi/pi (https://github.com/khoi/pi) via davis7dotsh/my-pi-setup
-//   Path: extensions/ask_user_question/index.ts
+// Source: https://github.com/khoi/pi/blob/278447d5fcd6/extensions/ask_user_question/index.ts
+// Via: https://github.com/davis7dotsh/my-pi-setup
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
@@ -209,6 +209,8 @@ export default function askUser(pi: ExtensionAPI) {
           lines.push("");
           if (timer && remaining <= COUNTDOWN_SECONDS) {
             add(theme.fg("warning", ` auto-continue in ${remaining}s · any key to stay`));
+          } else {
+            lines.push("");
           }
           add(
             theme.fg(
@@ -241,18 +243,23 @@ export default function askUser(pi: ExtensionAPI) {
     },
 
     renderCall(args, theme) {
-      const numbered = args.options.map((o, i) => `${i + 1}. ${o.label}`).join("  ");
+      const options = Array.isArray(args.options) ? args.options : [];
+      const numbered = options.map((o, i) => `${i + 1}. ${o.label}`).join("  ");
       return new Text(
         theme.fg("toolTitle", theme.bold("ask_user ")) +
-          theme.fg("muted", args.question) +
-          `\n${theme.fg("dim", `  ${numbered}`)}`,
+          theme.fg("muted", args.question ?? "") +
+          (numbered ? `\n${theme.fg("dim", `  ${numbered}`)}` : ""),
         0,
         0,
       );
     },
 
     renderResult(result, _options, theme) {
-      const outcome = result.details as Outcome;
+      const outcome = result.details as Outcome | undefined;
+      if (!outcome) {
+        const first = result.content[0];
+        return new Text(first?.type === "text" ? first.text : "", 0, 0);
+      }
       switch (outcome.kind) {
         case "selected":
           return new Text(

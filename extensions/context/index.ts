@@ -1,5 +1,4 @@
-// Source: mitsuhiko/agent-stuff (https://github.com/mitsuhiko/agent-stuff)
-//   Path: extensions/context.ts
+// Source: https://github.com/mitsuhiko/agent-stuff
 /**
  * /context
  *
