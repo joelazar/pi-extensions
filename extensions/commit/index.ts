@@ -15,6 +15,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { resolveModels } from "../shared/models.ts";
 
 const commitStyleInstructions = `**IMPORTANT**: Before creating commit messages:
 1. Examine the recent commit subjects to understand the repository's subject *format*: gitmoji vs conventional commits vs plain, capitalization, tense, prefix/scope style, subject length.
@@ -261,24 +262,6 @@ function buildCommitUrl(remoteUrl: string, hash: string): string {
   return `${url}/commit/${hash}`;
 }
 
-async function selectCommitModels(
-  ctx: ExtensionContext,
-): Promise<Model<Api>[]> {
-  if (!ctx.model) {
-    return [];
-  }
-
-  const haiku = ctx.modelRegistry.find("anthropic-extra", "claude-haiku-4-5");
-  if (haiku && haiku.id !== ctx.model.id) {
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(haiku);
-    if (auth.ok) {
-      return [haiku, ctx.model];
-    }
-  }
-
-  return [ctx.model];
-}
-
 async function generateCommitMessage(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -389,17 +372,17 @@ async function generateWithFallback(
   userMessageText: string,
 ): Promise<string | null> {
   let lastError: unknown;
-  for (const model of models) {
+  for (const [i, model] of models.entries()) {
     try {
       return await generateCommitMessage(pi, ctx, model, userMessageText);
     } catch (err) {
       lastError = err;
-      const isLast = model === models[models.length - 1];
-      if (!isLast) {
+      const next = models[i + 1];
+      if (next) {
         report(
           pi,
           ctx,
-          `${model.id} failed, falling back to ${models[models.length - 1].id}`,
+          `${model.id} failed, falling back to ${next.id}`,
           "info",
         );
       }
@@ -443,7 +426,7 @@ async function doCommit(
     runGit(pi, ["status", "--short", "--branch"]),
     runGit(pi, ["branch", "--show-current"]),
     runGit(pi, RECENT_COMMITS_ARGS),
-    selectCommitModels(ctx),
+    resolveModels(ctx, "fast"),
   ]);
 
   if (

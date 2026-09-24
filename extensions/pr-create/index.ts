@@ -6,6 +6,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
+import { resolveModels } from "../shared/models.ts";
 
 const SCRIPT = join(homedir(), ".local/bin/pr-create");
 const REVIEWERS_FILE =
@@ -15,7 +16,6 @@ const REVIEWERS_FILE =
     "pr-create/reviewers.conf",
   );
 
-const MODELS = ["anthropic-extra/claude-opus-5-5", "anthropic/claude-opus-5-5"];
 
 const ALLOWED_TYPES = [
   "feat",
@@ -312,7 +312,9 @@ async function runPi(
 ): Promise<string | undefined> {
   const errors: string[] = [];
   try {
-    for (const model of MODELS) {
+    const models = resolveModels(ctx, "smart").map((m) => `${m.provider}/${m.id}`);
+    if (models.length === 0) errors.push("no model with configured auth for role \"smart\"");
+    for (const model of models) {
       ctx.ui.setStatus("pr-create", `${label} (${model})…`);
       try {
         const result = await pi.exec(

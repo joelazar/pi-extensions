@@ -50,6 +50,19 @@ Some of these started as other people's code. `btw`, `context`, and `split-fork`
 
 The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` lists every entry point under its `pi` key, which is what pi reads. `extensions/shared/` holds code imported by more than one extension and is not an extension itself; `shared/terminal.ts` opens tabs and splits through the `herdr` CLI when pi runs inside Herdr (`HERDR_ENV=1`) and through Ghostty AppleScript otherwise.
 
+## Models
+
+`commit`, `session-name`, `session-recall`, and `pr-create` pick their models from `~/.pi/agent/extension-models.json`. Each role is a fallback chain of `provider/id` entries, and `current` means the session's active model. Entries that are unknown or have no auth are skipped. If the file or a role is missing, the extensions use the current model.
+
+```json
+{
+  "fast": ["anthropic-extra/claude-haiku-4-5", "current"],
+  "smart": ["anthropic-extra/claude-opus-5-5", "anthropic/claude-opus-5-5"]
+}
+```
+
+`fast` drives `commit`, `session-name`, and `session-recall`; `smart` drives `pr-create`. The file is read on every call, so edits apply without `/reload`.
+
 ```bash
 npm run typecheck   # tsc across every workspace that has it
 npm test            # node:test across every workspace that has it

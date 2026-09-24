@@ -7,8 +7,8 @@
  * `/rename` regenerates the name from the whole conversation, overwriting
  * whatever name the session has.
  *
- * Titles come from anthropic-extra's Haiku, falling back to the current
- * model when Haiku is missing or not logged in.
+ * Titles come from the first usable model of the "fast" role in
+ * ~/.pi/agent/extension-models.json.
  *
  * Inside Herdr the name is reported as the pane's agent title
  * (`herdr pane report-metadata --title`). The herdr-auto-title plugin ranks
@@ -18,8 +18,8 @@
  * lock the plugin out.
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveModels } from "../shared/models.ts";
 
 const PER_MESSAGE_CHARS = 500;
 const CONVERSATION_CHARS = 40_000;
@@ -71,13 +71,6 @@ function fitConversation(lines: string[]): string {
 	return [first, ...(skipped > 0 ? [`[... ${skipped} messages omitted ...]`] : []), ...tail].join("\n");
 }
 
-function pickModel(ctx: ExtensionContext): Model<Api> | undefined {
-	const haiku = ctx.modelRegistry.find("anthropic-extra", "claude-haiku-4-5");
-	if (haiku && ctx.modelRegistry.hasConfiguredAuth(haiku)) return haiku;
-	if (ctx.model && ctx.modelRegistry.hasConfiguredAuth(ctx.model)) return ctx.model;
-	return undefined;
-}
-
 type TitleResult = { ok: true; title: string } | { ok: false; reason: "skipped" | "failed"; error?: string };
 
 async function generateTitle(ctx: ExtensionContext, scope: Scope, signal?: AbortSignal): Promise<TitleResult> {
@@ -86,7 +79,7 @@ async function generateTitle(ctx: ExtensionContext, scope: Scope, signal?: Abort
 	const conversation = fitConversation(lines);
 	if (!conversation) return { ok: false, reason: "skipped", error: "no conversation yet" };
 
-	const model = pickModel(ctx);
+	const [model] = resolveModels(ctx, "fast");
 	if (!model) return { ok: false, reason: "skipped", error: "no model with configured auth" };
 
 	const prompt = [
