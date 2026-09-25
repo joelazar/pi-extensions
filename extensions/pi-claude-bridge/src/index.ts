@@ -26,7 +26,7 @@ import { jsonSchemaToZodShape } from "./typebox-to-zod.js";
 import { resolveGetModels } from "./pi-ai-compat.js";
 import { debug, diagDump, makeCliDebugOptions, moduleInstanceId } from "./debug.js";
 import { preflightClaudeExecutable, resolveClaudeExecutable } from "./claude-executable.js";
-import { appendIntegrityEntry, argKeys, deleteSharedSessionLane, extensionApi, getSharedSession, markSessionForRebuild, recordStartedLane, reportToolResultMismatch, safeNotify, safeToolCallSummary, setExtensionApi, setPiUI, setSharedSession, takeStartedLane, type SessionState } from "./bridge-state.js";
+import { appendIntegrityEntry, argKeys, deleteSharedSessionLane, getExtensionApi, getSharedSession, markSessionForRebuild, recordStartedLane, reportToolResultMismatch, safeNotify, safeToolCallSummary, setExtensionApi, setPiUI, setSharedSession, takeStartedLane, type SessionState } from "./bridge-state.js";
 import { connectorsEnabledFor, isChildExecutedTool } from "./connectors.js";
 import { primeConnectorServers } from "./connector-runtime.js";
 import { cancelScheduledSessionPersistence, conversationFingerprint, restoreSharedSessionFromPi, schedulePersistSharedSession, syncSharedSession } from "./session-persistence.js";
@@ -464,7 +464,7 @@ let nativeProviderInstance: unknown;
 let notifiedNativeUnsupported = false;
 
 function applyProviderRegistration(trigger: string): void {
-	const pi = extensionApi;
+	const pi = getExtensionApi();
 	if (!pi) { debug(`${trigger}: applyProviderRegistration skipped — no extensionApi`); return; }
 	const g = globalThis as Record<symbol, any>;
 	const isPrimary = claimPrimaryInstance();
