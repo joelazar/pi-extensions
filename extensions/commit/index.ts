@@ -529,14 +529,11 @@ async function doCommit(
       .map((s) => s.trim())
       .filter(Boolean)
       .join("\n");
-    pi.sendMessage(
-      {
-        customType: "commit",
-        content: `git commit failed (exit ${commitResult.code}):\n\n\`\`\`\n${output}\n\`\`\``,
-        display: true,
-      },
-      { deliverAs: "nextTurn" },
-    );
+    pi.sendMessage({
+      customType: "commit",
+      content: `git commit failed (exit ${commitResult.code}):\n\n\`\`\`\n${output}\n\`\`\``,
+      display: true,
+    });
     report(pi, ctx, "git commit failed — see output above", "error");
     return;
   }
