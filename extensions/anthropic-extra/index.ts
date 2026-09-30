@@ -210,6 +210,17 @@ export default function (pi: ExtensionAPI) {
 				maxTokens: 64_000,
 			},
 			{
+				id: "claude-sonnet-5-5",
+				name: "Claude Sonnet 5.5 (Extra)",
+				reasoning: true,
+				compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+				thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+				input: ["text", "image"],
+				cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+				contextWindow: 1_000_000,
+				maxTokens: 128_000,
+			},
+			{
 				id: "claude-sonnet-5",
 				name: "Claude Sonnet 5 (Extra)",
 				reasoning: true,

@@ -341,7 +341,7 @@ const GENERIC_DIRS = new Set([
 /**
  * Turn an extension/tool source path into a short, human-recognisable name.
  *
- * Synthetic paths (`<builtin:read>`, `<inline:llama.cpp>`) keep their inner
+ * Synthetic paths (`builtin:read`, legacy `<builtin:read>`/`<inline:llama.cpp>`) keep their inner
  * label. Real paths collapse to the nearest meaningful directory so that
  * `.../web-tools/index.ts` and `.../skill-toggle/src/index.ts` become
  * `web-tools` and `skill-toggle` instead of two identical `index.ts` lines.
@@ -350,6 +350,7 @@ export function extensionLabel(rawPath: string | undefined): string {
   const p = rawPath ?? "";
   if (!p) return "<unknown>";
   if (p.startsWith("<")) return p.replace(/^<|>$/g, "");
+  if (/^(builtin|sdk):/.test(p)) return p;
 
   const abs = path.resolve(p);
   const stem = path.basename(abs).replace(/\.[cm]?[jt]sx?$/i, "");
