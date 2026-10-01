@@ -30,10 +30,6 @@ const ROT_DEGRADED_TOKENS = 300_000;
 const ROT_LIMIT_PERCENT = 85;
 const FOOTER_CLAIM_DELAYS_MS = [0, 250, 1_000];
 
-function isAnthropicLike(provider: string | undefined) {
-  return provider === "anthropic" || !!provider?.startsWith("anthropic-");
-}
-
 type Diffstat = { files: number; insertions: number; deletions: number };
 
 function readDiffstat(cwd: string) {
@@ -112,6 +108,8 @@ function columns(left: string, right: string, width: number) {
   );
 }
 
+const HIDDEN_STATUSES = new Set(["i-have-adhd", "ponytail"]);
+
 export default function footer(pi: ExtensionAPI) {
   let diffstat: Diffstat = { files: 0, insertions: 0, deletions: 0 };
   let requestRender: (() => void) | undefined;
@@ -163,10 +161,7 @@ export default function footer(pi: ExtensionAPI) {
           const stats = `${context}${theme.fg("muted", ` · ${cost}`)}`;
 
           const thinking = model?.reasoning ? pi.getThinkingLevel() : "off";
-          const modelId =
-            subscription && isAnthropicLike(model?.provider)
-              ? `${model?.id} (cc-use)`
-              : (model?.id ?? "no-model");
+          const modelId = model?.id ?? "no-model";
           const modelLabel = model
             ? `${model.provider}/${modelId} · ${thinking}`
             : modelId;
@@ -188,7 +183,7 @@ export default function footer(pi: ExtensionAPI) {
 
           for (const [, text] of [
             ...footerData.getExtensionStatuses().entries(),
-          ].sort(([a], [b]) => a.localeCompare(b))) {
+          ].filter(([key]) => !HIDDEN_STATUSES.has(key)).sort(([a], [b]) => a.localeCompare(b))) {
             for (const statusLine of text.split("\n")) {
               lines.push(
                 truncateToWidth(statusLine, width, theme.fg("dim", "...")),
