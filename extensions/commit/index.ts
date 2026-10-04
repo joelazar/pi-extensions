@@ -271,14 +271,6 @@ async function generateCommitMessage(
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) throw new Error(auth.error);
 
-  // exe.dev registers aliased ids (`<native>@<integration>`); its gateway only
-  // accepts the native id. pi's request pipeline rewrites the alias away, but
-  // direct completeSimple calls bypass that, so strip it here.
-  const requestModel =
-    model.provider.startsWith("exe-dev-")
-      ? { ...model, id: model.id.replace(/@[^/@]+$/, "") }
-      : model;
-
   const userMessage: UserMessage = {
     role: "user",
     content: [{ type: "text", text: userMessageText }],
@@ -293,14 +285,14 @@ async function generateCommitMessage(
     apiKey: auth.apiKey,
     headers: auth.headers,
     reasoning: "low" as const,
-    ...(requestModel.api === "openai-completions" && requestModel.reasoning
+    ...(model.api === "openai-completions" && model.reasoning
       ? { samplingParams: { reasoning_effort: "low" as const } }
       : {}),
   };
 
   if (!ctx.hasUI) {
     const response = await completeSimple(
-      requestModel,
+      model,
       {
         systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
         messages: [userMessage],
@@ -331,7 +323,7 @@ async function generateCommitMessage(
 
     const doGenerate = async () => {
       const response = await completeSimple(
-        requestModel,
+        model,
         {
           systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
           messages: [userMessage],

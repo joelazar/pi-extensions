@@ -27,13 +27,17 @@ function lookup(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, entry: s
 	return ctx.modelRegistry.find(entry.slice(0, slash), entry.slice(slash + 1));
 }
 
+function requestModel(model: Model<Api>): Model<Api> {
+	return model.provider.startsWith("exe-dev-") ? { ...model, id: model.id.replace(/@[^/@]+$/, "") } : model;
+}
+
 export function resolveModels(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, role: ModelRole): Model<Api>[] {
 	const models: Model<Api>[] = [];
 	for (const entry of roleEntries(role)) {
 		const model = lookup(ctx, entry);
 		if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) continue;
 		if (models.some((m) => m.provider === model.provider && m.id === model.id)) continue;
-		models.push(model);
+		models.push(requestModel(model));
 	}
 	return models;
 }
