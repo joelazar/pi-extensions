@@ -6,6 +6,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { FABLE_FALLBACK_MODEL_ID, FABLE_MODEL_ID, MODEL_IDS_IN_ORDER, OPUS_5_5_MODEL_ID, OPUS_5_MODEL_ID, SONNET_5_MODEL_ID, buildModels, fallbackModelForPrimaryModel, modelDisplayName } from "../src/models.js";
+import { buildClaudeQueryOptions } from "../src/query-options.js";
 
 // Simulated pi-ai registry entry — extra fields mimic the ones pi-ai exposes
 // that must not leak into the provider-registered MODELS array.
@@ -44,22 +45,54 @@ describe("MODELS projection", () => {
 
 	it("fills supported model metadata missing from pi-ai and drops unknown missing IDs", () => {
 		const models = buildModels([mockPiAiModel("claude-haiku-4-5")]);
-		assert.deepEqual(models.map((m) => m.id), ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]);
+		assert.deepEqual(models.map((m) => m.id), ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-sonnet-5-5", "claude-sonnet-5", "claude-haiku-4-5"]);
 		assert.equal(models.find((m) => m.id === "claude-fable-5-1")?.name, "Claude Fable 5.1");
 		assert.equal(models.find((m) => m.id === "claude-fable-5-1")?.contextWindow, 1000000);
 		assert.equal(models.find((m) => m.id === "claude-opus-4-8")?.maxTokens, 128000);
 		assert.equal(models.find((m) => m.id === "claude-sonnet-5")?.name, "Claude Sonnet 5");
 		assert.equal(models.find((m) => m.id === "claude-sonnet-5")?.contextWindow, 1000000);
+		assert.equal(models.find((m) => m.id === "claude-sonnet-5-5")?.name, "Claude Sonnet 5.5");
+		assert.equal(models.find((m) => m.id === "claude-sonnet-5-5")?.contextWindow, 1000000);
+		assert.equal(models.find((m) => m.id === "claude-sonnet-5-5")?.maxTokens, 128000);
+		assert.deepEqual(models.find((m) => m.id === "claude-sonnet-5-5")?.input, ["text", "image"]);
+		assert.deepEqual(models.find((m) => m.id === "claude-sonnet-5-5")?.thinkingLevelMap, { off: null, xhigh: "xhigh", max: "max" });
 		assert.equal(models.find((m) => m.id === "claude-opus-5")?.name, "Claude Opus 5");
 		assert.equal(models.find((m) => m.id === "claude-opus-5")?.contextWindow, 1000000);
 		assert.equal(models.find((m) => m.id === "claude-opus-5")?.maxTokens, 128000);
 		assert.equal(models.find((m) => m.id === "claude-opus-5-5")?.name, "Claude Opus 5.5");
 		assert.equal(models.find((m) => m.id === "claude-opus-5-5")?.contextWindow, 1000000);
 		assert.equal(models.find((m) => m.id === "claude-opus-5-5")?.maxTokens, 128000);
-		assert.deepEqual(models.find((m) => m.id === "claude-opus-5-5")?.thinkingLevelMap, { xhigh: "xhigh", max: "max" });
+		assert.deepEqual(models.find((m) => m.id === "claude-opus-5-5")?.thinkingLevelMap, { off: null, xhigh: "xhigh", max: "max" });
 		assert.deepEqual(models.find((m) => m.id === "claude-opus-5")?.thinkingLevelMap, { xhigh: "xhigh", max: "max" });
-		assert.deepEqual(models.find((m) => m.id === "claude-fable-5-1")?.thinkingLevelMap, { xhigh: "xhigh", max: "max" });
+		assert.deepEqual(models.find((m) => m.id === "claude-fable-5-1")?.thinkingLevelMap, { off: null, xhigh: "xhigh", max: "max" });
 		assert.deepEqual(models.find((m) => m.id === "claude-sonnet-5")?.thinkingLevelMap, { xhigh: "xhigh", max: "max" });
+		const sonnet = models.find((m) => m.id === "claude-sonnet-5-5");
+		assert.ok(sonnet);
+		assert.equal(sonnet.name, "Claude Sonnet 5.5");
+		assert.equal(sonnet.contextWindow, 1000000);
+		assert.equal(sonnet.maxTokens, 128000);
+		assert.equal(sonnet.reasoning, true);
+		assert.deepEqual(sonnet.input, ["text", "image"]);
+	});
+
+	it("forwards Sonnet 5.5 effort levels without overriding Claude Code's thinking mode", () => {
+		const registeredModel = buildModels([]).find((m) => m.id === "claude-sonnet-5-5");
+		assert.ok(registeredModel);
+		const model = { ...registeredModel, provider: "pi-claude", api: "claude-bridge", baseUrl: "claude-bridge" };
+		for (const reasoning of ["low", "medium", "high", "xhigh", "max"]) {
+			const { queryOptions } = buildClaudeQueryOptions({
+				cwd: process.cwd(),
+				requestedModel: model,
+				queryModel: model,
+				bridgeConfig: {},
+				systemPrompt: "Pi system prompt",
+				reasoning,
+				resumeSessionId: null,
+			});
+			assert.equal(queryOptions.model, "claude-sonnet-5-5");
+			assert.equal(queryOptions.effort, reasoning);
+			assert.equal(queryOptions.thinking, undefined);
+		}
 	});
 
 	it("prefers pi-ai metadata over bridge fallback metadata", () => {
@@ -91,17 +124,18 @@ describe("MODELS projection", () => {
 });
 
 describe("model fallback pairing", () => {
-	it("configures Opus 4.8 safety fallback for the two models whose classifiers decline", () => {
+	it("configures Opus 4.8 safety fallback for the models whose classifiers decline", () => {
 		assert.equal(fallbackModelForPrimaryModel(FABLE_MODEL_ID), FABLE_FALLBACK_MODEL_ID);
 		assert.equal(fallbackModelForPrimaryModel(OPUS_5_MODEL_ID), FABLE_FALLBACK_MODEL_ID);
-		assert.equal(fallbackModelForPrimaryModel(OPUS_5_5_MODEL_ID), undefined);
+		assert.equal(fallbackModelForPrimaryModel(OPUS_5_5_MODEL_ID), FABLE_FALLBACK_MODEL_ID);
 		assert.equal(fallbackModelForPrimaryModel(FABLE_FALLBACK_MODEL_ID), undefined);
 		assert.equal(fallbackModelForPrimaryModel(SONNET_5_MODEL_ID), undefined);
+		assert.equal(fallbackModelForPrimaryModel("claude-sonnet-5-5"), undefined);
 		assert.equal(fallbackModelForPrimaryModel("claude-sonnet-4-6"), undefined);
 	});
 
 	it("labels every model in a configured fallback pairing", () => {
-		for (const id of [FABLE_MODEL_ID, OPUS_5_MODEL_ID, FABLE_FALLBACK_MODEL_ID]) {
+		for (const id of [FABLE_MODEL_ID, OPUS_5_5_MODEL_ID, OPUS_5_MODEL_ID, FABLE_FALLBACK_MODEL_ID]) {
 			assert.notEqual(modelDisplayName(id), id);
 		}
 		assert.equal(modelDisplayName("claude-opus-5"), "Claude Opus 5");
