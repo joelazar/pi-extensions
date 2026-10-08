@@ -57,7 +57,7 @@ The repo is an npm workspace. Extensions with dependencies or tests of their own
 
 ```json
 {
-  "fast": ["anthropic-extra/claude-haiku-4-5", "current"],
+  "fast": ["anthropic-extra/claude-haiku-5-5", "current"],
   "smart": ["anthropic-extra/claude-opus-5-5", "anthropic/claude-opus-5-5"]
 }
 ```

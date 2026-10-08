@@ -26,6 +26,7 @@ export const MODEL_IDS_IN_ORDER = [
 	SONNET_5_5_MODEL_ID,
 	SONNET_5_MODEL_ID,
 	"claude-sonnet-4-6",
+	"claude-haiku-5-5",
 	"claude-haiku-4-5",
 ];
 
