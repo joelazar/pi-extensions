@@ -17,8 +17,7 @@
  * Based on codemap extension by @kcosr
  */
 
-import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { Input, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, Input, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -126,7 +125,6 @@ const state: PickerState = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface PaletteTheme {
-	border: string;
 	title: string;
 	selected: string;
 	selectedText: string;
@@ -138,7 +136,6 @@ interface PaletteTheme {
 }
 
 const DEFAULT_THEME: PaletteTheme = {
-	border: "2",
 	title: "2",
 	selected: "36",
 	selectedText: "36",
@@ -566,7 +563,6 @@ function filterEntries(entries: FileEntry[], query: string, preferredPath?: stri
 // ═══════════════════════════════════════════════════════════════════════════
 
 class FileBrowserComponent {
-	readonly width = 100;
 	private readonly maxVisible = 10;
 	private cwdRoot: string;
 	private currentDir: string;
@@ -585,9 +581,11 @@ class FileBrowserComponent {
 	private selectedOption = 0;
 	private options: BrowserOption[];
 	private done: (action: FileBrowserAction) => void;
+	private border: (s: string) => string;
 
-	constructor(done: (action: FileBrowserAction) => void) {
+	constructor(done: (action: FileBrowserAction) => void, border: (s: string) => string) {
 		this.done = done;
+		this.border = border;
 		this.cwdRoot = getCwdRoot();
 		this.currentDir = this.cwdRoot;
 		this.selectedPaths = new Map();
@@ -1033,11 +1031,10 @@ class FileBrowserComponent {
 	}
 
 	render(width: number): string[] {
-		const innerW = Math.min(this.width, width) - 2;
 		const lines: string[] = [];
 
 		const t = paletteTheme;
-		const border = (s: string) => fg(t.border, s);
+		const border = this.border;
 		const title = (s: string) => fg(t.title, s);
 		const selected = (s: string) => fg(t.selected, s);
 		const selectedText = (s: string) => fg(t.selectedText, s);
@@ -1047,67 +1044,40 @@ class FileBrowserComponent {
 		const bold = (s: string) => `\x1b[1m${s}\x1b[22m`;
 
 		const truncate = (s: string, maxW: number) => truncateToWidth(s, maxW, "…");
+		const row = (content: string) => truncateToWidth(content, width, "…", true);
+		const split = (left: string, right: string) => {
+			const gap = width - visibleWidth(left) - visibleWidth(right);
+			return gap >= 2 ? left + " ".repeat(gap) + right : row(left);
+		};
+		const rule = (left: string, right = ""): string => {
+			const l = `${border("─ ")}${left} `;
+			const r = right ? ` ${right}${border(" ─")}` : "";
+			const fill = width - visibleWidth(l) - visibleWidth(r);
+			if (fill >= 1) return l + border("─".repeat(fill)) + r;
+			return right ? rule(left) : truncateToWidth(l, width, "…");
+		};
 
-		const row = (content: string) => border("│") + truncateToWidth(content, innerW, "…", true) + border("│");
+		const relDir = path.relative(this.cwdRoot, this.currentDir);
+		const titleText = this.isSearchMode ? "Search" : !this.rootParentView && relDir ? truncate(relDir, 40) : "Files";
+		const optionsStr = this.getVisibleOptions()
+			.map((opt, i) => {
+				const isSelectedOpt = this.focusOnOptions && i === this.selectedOption;
+				const checkbox = opt.enabled ? checked("☑") : hint("☐");
+				const label = isSelectedOpt ? selected(opt.label) : opt.enabled ? opt.label : hint(opt.label);
+				return `${isSelectedOpt ? selected("▸") : ""}${checkbox} ${label}`;
+			})
+			.join("  ");
+		lines.push(rule(bold(title(titleText)), optionsStr));
 
-		// Top border with title
-		let titleText: string;
-		if (this.isSearchMode) {
-			titleText = " Search ";
-		} else if (this.rootParentView) {
-			titleText = " Files ";
-		} else {
-			const relDir = path.relative(this.cwdRoot, this.currentDir);
-			titleText = relDir ? ` ${truncate(relDir, 40)} ` : " Files ";
-		}
-		const borderLen = Math.max(0, innerW - visibleWidth(titleText));
-		const leftBorder = Math.floor(borderLen / 2);
-		const rightBorder = borderLen - leftBorder;
-		lines.push(
-			border("╭" + "─".repeat(leftBorder)) +
-				title(titleText) +
-				border("─".repeat(rightBorder) + "╮")
-		);
-
-		// Search input
 		const searchPrompt = selected("❯ ");
 		const modeIndicator = this.query && isGlobPattern(this.query) ? hint(" [glob]") : "";
-		const searchWidth = Math.max(3, innerW - 1 - visibleWidth(modeIndicator));
+		const searchWidth = Math.max(3, width - 3 - visibleWidth(modeIndicator));
 		const renderedSearchInput = this.searchInput.render(searchWidth)[0] ?? "> ";
 		const normalizedSearchInput = renderedSearchInput.startsWith("> ")
 			? renderedSearchInput.slice(2)
 			: renderedSearchInput;
 		lines.push(row(` ${searchPrompt}${normalizedSearchInput}${modeIndicator}`));
 
-		// Options row
-		const visibleOptions = this.getVisibleOptions();
-		if (visibleOptions.length > 0) {
-			const optParts: string[] = [];
-			for (let i = 0; i < visibleOptions.length; i++) {
-				const opt = visibleOptions[i];
-				const isSelectedOpt = this.focusOnOptions && i === this.selectedOption;
-				const checkbox = opt.enabled ? checked("☑") : hint("☐");
-				const label = isSelectedOpt
-					? selected(opt.label)
-					: opt.enabled
-						? opt.label
-						: hint(opt.label);
-				const prefix = isSelectedOpt ? selected("▸") : " ";
-				optParts.push(`${prefix}${checkbox} ${label}`);
-			}
-			const optionsStr = optParts.join(" ");
-			const tabHint = this.focusOnOptions
-				? hint(" (←→/↑↓ move, space toggle, esc exit, shift+tab)")
-				: hint(" (shift+tab options)");
-			lines.push(row(` ${optionsStr}${tabHint}`));
-		} else {
-			lines.push(row(""));
-		}
-
-		// Divider
-		lines.push(border(`├${"─".repeat(innerW)}┤`));
-
-		// File list - always render exactly maxVisible rows
 		const startIndex = Math.max(
 			0,
 			Math.min(this.selected - Math.floor(this.maxVisible / 2), this.filtered.length - this.maxVisible)
@@ -1132,8 +1102,7 @@ class FileBrowserComponent {
 					displayName = entry.name + (entry.isDirectory ? "/" : "");
 				}
 
-				const maxNameLen = innerW - 8;
-				const truncatedName = truncate(displayName, maxNameLen);
+				const truncatedName = truncate(displayName, width - 6);
 
 				let nameStr: string;
 				if (isUpDir) {
@@ -1157,32 +1126,17 @@ class FileBrowserComponent {
 			}
 		}
 
-		// Scroll/count indicator row
-		if (this.filtered.length > this.maxVisible) {
-			const shown = `${startIndex + 1}-${Math.min(startIndex + this.maxVisible, this.filtered.length)}`;
-			lines.push(row(hint(` (${shown} of ${this.filtered.length})`)));
-		} else if (this.filtered.length > 0) {
-			lines.push(row(hint(` (${this.filtered.length} file${this.filtered.length === 1 ? "" : "s"})`)));
-		} else {
-			lines.push(row(""));
-		}
+		const count =
+			this.filtered.length > this.maxVisible
+				? `${startIndex + 1}-${Math.min(startIndex + this.maxVisible, this.filtered.length)} of ${this.filtered.length}`
+				: `${this.filtered.length} file${this.filtered.length === 1 ? "" : "s"}`;
+		const selection = this.selectedPaths.size > 0 ? checked(`Selected (${this.selectedPaths.size}) `) : "";
+		lines.push(split(hint(` ${count}`), selection));
 
-		// Selection summary section
-		lines.push(border(`├${"─".repeat(innerW)}┤`));
-		if (this.selectedPaths.size > 0) {
-			const selectedList = Array.from(this.selectedPaths.keys()).slice(0, 3);
-			const preview = selectedList.join(", ") + (this.selectedPaths.size > 3 ? ", ..." : "");
-			lines.push(row(` ${checked(`Selected (${this.selectedPaths.size}):`)} ${truncate(preview, innerW - 18)}`));
-		} else {
-			lines.push(row(hint(" No files selected")));
-		}
-
-		// Footer
-		lines.push(border(`├${"─".repeat(innerW)}┤`));
-		lines.push(row(hint(" ↑↓/^n^p move  ←→ dirs  space queue/open  tab complete  enter select  esc done")));
-
-		// Bottom border
-		lines.push(border(`╰${"─".repeat(innerW)}╯`));
+		const keys = this.focusOnOptions
+			? "←→ move · space toggle · esc back"
+			: "↑↓ move · ←→ dirs · space queue/open · tab complete · enter select · esc done · shift+tab options";
+		lines.push(rule(hint(keys)));
 
 		return lines;
 	}
@@ -1195,18 +1149,14 @@ class FileBrowserComponent {
 // Shared File Picker Logic
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function openFilePicker(ui: ExtensionUIContext): Promise<string> {
-	const result = await ui.custom<FileBrowserAction>(
-		(_tui, _theme, _kb, done) => new FileBrowserComponent(done),
-		{ overlay: true }
-	);
-
-	if (!result || result.action === "cancel") return "";
-	const paths = result.paths ?? [];
-	if (paths.length == 0) return "";
-
-	// Add trailing / for directories to make it clear
-	return paths.map((p) => `@${p.path}${p.isDirectory ? "/" : ""}`).join(" ");
+function toRefs(result: FileBrowserAction): string {
+	if (result.action === "cancel") return "";
+	return (result.paths ?? []).map((p) => `@${p.path}${p.isDirectory ? "/" : ""}`).join("\n");
 }
 
-
+export function openFilePicker(border: (s: string) => string): { component: Component; result: Promise<string> } {
+	let resolve!: (refs: string) => void;
+	const result = new Promise<string>((r) => (resolve = r));
+	const component = new FileBrowserComponent((action) => resolve(toRefs(action)), border);
+	return { component, result };
+}

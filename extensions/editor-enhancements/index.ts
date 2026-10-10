@@ -62,7 +62,7 @@ export default function (pi: ExtensionAPI) {
         const uiTheme = ctx.ui.theme;
 
         ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-            activeEditor = new EnhancedEditor(tui, theme, keybindings, ctx.ui, {
+            activeEditor = new EnhancedEditor(tui, theme, keybindings, {
                 doubleEscapeCommand,
                 canTriggerDoubleEscapeCommand: () => {
                     if (!activeContext) return false;

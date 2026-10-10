@@ -1,8 +1,9 @@
-import { CustomEditor, type ExtensionUIContext, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import {
     type AutocompleteItem,
     type AutocompleteProvider,
     type AutocompleteSuggestions,
+    type Component,
     type EditorTheme,
     type TUI,
 } from "@earendil-works/pi-tui";
@@ -113,7 +114,7 @@ function wrapProviderWithShellAndAtFiltering(provider: AutocompleteProvider, she
 
 export class EnhancedEditor extends CustomEditor {
     private readonly tuiInstance: TUI;
-    private openingPicker = false;
+    private picker: Component | null = null;
     private wrappedAutocompleteProvider = false;
     private lastEscapeTime = 0;
     private _onSubmitOriginal?: (text: string) => void;
@@ -125,7 +126,6 @@ export class EnhancedEditor extends CustomEditor {
         tui: TUI,
         theme: EditorTheme,
         keybindings: KeybindingsManager,
-        private ui: ExtensionUIContext,
         private options: EnhancedEditorOptions,
         private keybindingsManager: KeybindingsManager = keybindings,
     ) {
@@ -187,10 +187,20 @@ export class EnhancedEditor extends CustomEditor {
     }
 
     async openFilePickerAtCursor(): Promise<void> {
-        const refs = await openFilePicker(this.ui);
-        if (!refs) return;
-        this.insertTextAtCursor(refs + " ");
+        const { component, result } = openFilePicker(this.lockedBorderColor);
+        const wasFocused = this.focused;
+        this.picker = component;
+        this.focused = false;
         this.tuiInstance.requestRender();
+        const refs = await result;
+        this.picker = null;
+        this.focused = wasFocused;
+        if (refs) this.insertTextAtCursor(`${this.getCursor().col > 0 ? "\n" : ""}${refs}\n`);
+        this.tuiInstance.requestRender();
+    }
+
+    render(width: number): string[] {
+        return this.picker ? [...this.picker.render(width), ...super.render(width)] : super.render(width);
     }
 
     async pasteClipboardRawAtCursor(): Promise<void> {
@@ -212,7 +222,10 @@ export class EnhancedEditor extends CustomEditor {
     }
 
     handleInput(data: string): void {
-        if (this.openingPicker) return;
+        if (this.picker) {
+            this.picker.handleInput?.(data);
+            return;
+        }
 
         if (this.shouldHandleConfiguredDoubleEscape(data)) {
             this.handleConfiguredDoubleEscape();
@@ -225,14 +238,11 @@ export class EnhancedEditor extends CustomEditor {
 
         // Intercept @ at token start to open picker
         if (data === "@" && this.shouldTriggerFilePicker()) {
-            this.openingPicker = true;
             if (this.isShowingAutocomplete()) {
                 // Escape cancels autocomplete in the base editor
                 super.handleInput("\x1b");
             }
-            this.openFilePickerAtCursor().finally(() => {
-                this.openingPicker = false;
-            });
+            void this.openFilePickerAtCursor();
             return;
         }
 
