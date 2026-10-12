@@ -574,6 +574,26 @@ async function doCommit(
   report(pi, ctx, summary, "info");
 }
 
+async function runAgentPrompt(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  prompt: string,
+) {
+  if (ctx.hasUI) {
+    pi.sendUserMessage(prompt);
+    return;
+  }
+
+  const settled = new Promise<void>((resolve) => {
+    const off = pi.on("agent_settled", () => {
+      off();
+      resolve();
+    });
+  });
+  pi.sendUserMessage(prompt);
+  await settled;
+}
+
 async function doAtomicCommit(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -643,7 +663,7 @@ ${commitStyleInstructions}${additionalSection}
 
 Do not use any other tools or do anything else besides staging and committing. Do not send any other text or messages besides these tool calls.`;
 
-    pi.sendUserMessage(prompt);
+    await runAgentPrompt(pi, ctx, prompt);
   } else {
     // Mode 2: Restructure existing branch commits into atomic commits
     // Find the base branch (main or master)
@@ -749,7 +769,7 @@ ${commitStyleInstructions}${additionalSection}
 
 Do not use any other tools or do anything else besides resetting, staging and committing. Do not send any other text or messages besides these tool calls.`;
 
-    pi.sendUserMessage(prompt);
+    await runAgentPrompt(pi, ctx, prompt);
   }
 }
 
