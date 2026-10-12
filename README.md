@@ -32,7 +32,7 @@ pi install "$PWD"
 | `export-md`           | `/md`, `ctrl+shift+m`             | Renders the session to Markdown and opens it                                           |
 | `footer`              | TUI footer                        | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files              |
 | `move-session`        | `/move-session <dir>`             | Moves the current session to another cwd and relaunches pi there                       |
-| `pr-create`           | `/pr-create`                      | Front-end for my `pr-create` script using pi's dialogs instead of gum                  |
+| `pr-create`           | `/pr-create`                      | Auto-fills title, body and Linear, then a review menu before `pr-create`               |
 | `pi-claude-bridge`    | provider `pi-claude`              | Runs Claude Code through the Claude Agent SDK as a pi provider, with pi's tools        |
 | `rtk`                 | bash rewriting                    | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
 | `sandbox`             | `/sandbox`, `--sandbox`           | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
@@ -62,7 +62,7 @@ The repo is an npm workspace. Extensions with dependencies or tests of their own
 }
 ```
 
-`fast` drives `commit`, `session-name`, and `session-recall`; `smart` drives `pr-create`. The file is read on every call, so edits apply without `/reload`.
+`fast` drives `commit`, `pr-create`, `session-name`, and `session-recall`; no extension uses `smart` right now. The file is read on every call, so edits apply without `/reload`.
 
 ```bash
 npm run typecheck   # tsc across every workspace that has it

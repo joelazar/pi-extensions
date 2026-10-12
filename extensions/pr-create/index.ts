@@ -31,23 +31,6 @@ const ALLOWED_TYPES = [
   "revert",
   "deps",
 ] as const;
-type CommitType = (typeof ALLOWED_TYPES)[number];
-
-const TYPE_HELP: Record<CommitType, string> = {
-  feat: "user-facing new functionality",
-  fix: "bug fix",
-  docs: "documentation only",
-  style: "formatting/whitespace, no behavior change",
-  refactor: "code change that doesn't add features or fix bugs",
-  perf: "performance improvement",
-  test: "add or fix tests",
-  build: "build system, packaging, tooling",
-  ci: "CI config and scripts",
-  chore: "maintenance, configs, dotfiles",
-  revert: "revert a previous commit",
-  deps: "dependency bumps",
-};
-
 const TYPES_ALT = ALLOWED_TYPES.join("|");
 const TITLE_RE = new RegExp(`^(${TYPES_ALT})(\\([^)]+\\))?!?: .+`);
 const LOOSE_TITLE_RE = new RegExp(
@@ -104,97 +87,6 @@ async function tryExec(
     return r.code === 0 ? r.stdout : undefined;
   } catch {
     return undefined;
-  }
-}
-
-async function autoTitle(
-  pi: ExtensionAPI,
-  ctx: Ctx,
-  initial: string,
-): Promise<string | undefined> {
-  const fromArgs = validTitle(initial);
-  if (fromArgs) return fromArgs;
-  const subject = await tryExec(
-    pi,
-    ctx,
-    "git",
-    ["log", "-1", "--pretty=%s"],
-    5_000,
-  );
-  return subject ? validTitle(subject) : undefined;
-}
-
-async function inputTitle(
-  ctx: Ctx,
-  initial: string,
-): Promise<string | undefined> {
-  for (;;) {
-    const t = await ctx.ui.input(`Title (${TITLE_HINT})`, initial);
-    if (t === undefined) return undefined;
-    const trimmed = t.trim();
-    if (!trimmed) {
-      ctx.ui.notify(
-        "Title is required — try again or press Esc to cancel",
-        "warning",
-      );
-      continue;
-    }
-    if (!TITLE_RE.test(trimmed)) {
-      ctx.ui.notify(`Invalid title: ${trimmed}`, "error");
-      continue;
-    }
-    return trimmed;
-  }
-}
-
-async function buildTitle(
-  ctx: Ctx,
-  pi: ExtensionAPI,
-  initial: string,
-): Promise<string | undefined> {
-  const suggestion = (await autoTitle(pi, ctx, initial)) ?? initial.trim();
-  const suggestedType = suggestion.match(TITLE_RE)?.[1] as
-    | CommitType
-    | undefined;
-  const orderedTypes = suggestedType
-    ? [suggestedType, ...ALLOWED_TYPES.filter((t) => t !== suggestedType)]
-    : [...ALLOWED_TYPES];
-  const typePick = await ctx.ui.select(
-    "Conventional commit type",
-    orderedTypes.map((t) => `${t}  —  ${TYPE_HELP[t]}`),
-  );
-  if (!typePick) return undefined;
-  const type = typePick.split(" ")[0] as CommitType;
-
-  const scope = await ctx.ui.input(
-    `Scope for ${type} (optional, e.g. api, ui)`,
-    "",
-  );
-  if (scope === undefined) return undefined;
-
-  const breaking = await ctx.ui.confirm(
-    "Breaking change?",
-    "Append `!` to mark a breaking change.",
-  );
-
-  const initialSubject = suggestion.replace(TITLE_RE, "").trim() || suggestion;
-
-  for (;;) {
-    const subject = await ctx.ui.input(
-      "Subject (imperative, lowercase, ≤72 chars)",
-      initialSubject,
-    );
-    if (subject === undefined) return undefined;
-    const subjectTrim = subject.trim();
-    if (!subjectTrim) {
-      ctx.ui.notify(
-        "Subject is required — try again or press Esc to cancel",
-        "warning",
-      );
-      continue;
-    }
-    const scopePart = scope.trim() ? `(${scope.trim()})` : "";
-    return `${type}${scopePart}${breaking ? "!" : ""}: ${subjectTrim}`;
   }
 }
 
@@ -309,17 +201,27 @@ async function runPi(
   label: string,
   prompt: string,
   accept: (raw: string) => string | undefined,
+  extraArgs: string[],
 ): Promise<string | undefined> {
   const errors: string[] = [];
   try {
-    const models = resolveModels(ctx, "smart").map((m) => `${m.provider}/${m.id}`);
-    if (models.length === 0) errors.push("no model with configured auth for role \"smart\"");
+    const models = resolveModels(ctx, "fast").map((m) => `${m.provider}/${m.id}`);
+    if (models.length === 0) errors.push("no model with configured auth for role \"fast\"");
     for (const model of models) {
       ctx.ui.setStatus("pr-create", `${label} (${model})…`);
       try {
         const result = await pi.exec(
           "pi",
-          ["-p", "--no-session", "--model", model, "--thinking", "off", prompt],
+          [
+            "-p",
+            "--no-session",
+            "--model",
+            model,
+            "--thinking",
+            "off",
+            ...extraArgs,
+            prompt,
+          ],
           { signal: ctx.signal, timeout: 120_000 },
         );
         if (result.code === 0) {
@@ -359,8 +261,13 @@ async function generatePrTitle(
     "",
     changesContext(changes),
   ].join("\n");
-  return runPi(pi, ctx, "Generating PR title", prompt, (raw) =>
-    validTitle(raw.trim().split("\n")[0] ?? ""),
+  return runPi(
+    pi,
+    ctx,
+    "Generating PR title",
+    prompt,
+    (raw) => validTitle(raw.trim().split("\n")[0] ?? ""),
+    ["--no-tools"],
   );
 }
 
@@ -390,7 +297,11 @@ async function generatePrBody(
     "",
     changesContext(changes),
   ].join("\n");
-  return runPi(pi, ctx, "Generating PR description", prompt, sanitizePrBody);
+  // The read tool lets pi load the pr and unslop skills.
+  return runPi(pi, ctx, "Generating PR description", prompt, sanitizePrBody, [
+    "--tools",
+    "read",
+  ]);
 }
 
 const HR_RE = /^[-*_]{3,}$/;
@@ -500,101 +411,13 @@ async function detectLinearFromBranch(
     5_000,
   );
   if (!branch) return [];
-  return [
-    ...new Set(
-      [...branch.trim().matchAll(/\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g)].map(
-        (m) => m[1],
-      ),
-    ),
-  ];
-}
-
-async function collectLinearLinks(ctx: Ctx): Promise<string[]> {
-  const links: string[] = [];
-  for (;;) {
-    const ticket = await ctx.ui.input("Ticket ID (e.g. ABC-123)", "");
-    const id = ticket?.trim();
-    if (!id) break;
-    const rel = await ctx.ui.select(`Relation for ${id}`, ["Closes", "Ref"]);
-    if (!rel) break;
-    links.push(`${rel} ${id}`);
-    const more = await ctx.ui.confirm("Add another?", "Another Linear ticket?");
-    if (!more) break;
-  }
-  return links;
-}
-
-async function pickLinearLinks(
-  pi: ExtensionAPI,
-  ctx: Ctx,
-): Promise<string[] | undefined> {
-  const detected = await detectLinearFromBranch(pi, ctx);
-  const choices = [
-    ...(detected.length
-      ? [`Auto: Closes ${detected.join(", Closes ")}`]
-      : []),
-    "Add manually",
-    "None",
-  ];
-  const pick = await ctx.ui.select("Linear tickets", choices);
-  if (!pick) return undefined;
-  if (pick === "None") return [];
-  if (pick.startsWith("Auto:")) return detected.map((id) => `Closes ${id}`);
-  return collectLinearLinks(ctx);
-}
-
-async function pickBoolWithAuto(
-  ctx: Ctx,
-  label: string,
-  autoValue: boolean,
-): Promise<boolean | undefined> {
-  const pick = await ctx.ui.select(label, [
-    `Auto: ${autoValue ? "Yes" : "No"}`,
-    "Yes",
-    "No",
-  ]);
-  if (!pick) return undefined;
-  if (pick.startsWith("Auto:")) return autoValue;
-  return pick === "Yes";
-}
-
-async function pickTitleInteractive(
-  ctx: Ctx,
-  pi: ExtensionAPI,
-  rawArgs: string,
-  changes: Changes | undefined,
-): Promise<string | undefined> {
-  const auto = await autoTitle(pi, ctx, rawArgs);
-  const GENERATE = "Generate with pi";
-  const DIRECT = "Enter directly (one line)";
-  const BUILD = "Build step-by-step (type → scope → subject)";
-  for (;;) {
-    const pick = await ctx.ui.select("Title", [
-      ...(auto ? [`Auto: ${auto}`] : []),
-      ...(changes ? [GENERATE] : []),
-      DIRECT,
-      BUILD,
-    ]);
-    if (!pick) return undefined;
-    if (pick.startsWith("Auto:")) return auto;
-    if (pick === DIRECT) return inputTitle(ctx, auto ?? rawArgs.trim());
-    if (pick === BUILD) return buildTitle(ctx, pi, rawArgs);
-    const generated = await generatePrTitle(pi, ctx, changes!);
-    if (!generated) continue;
-    const use = await ctx.ui.select(`Suggested: ${generated}`, [
-      "Use it",
-      "Edit it",
-      "Regenerate",
-      "Back",
-    ]);
-    if (!use) return undefined;
-    if (use === "Use it") return generated;
-    if (use === "Edit it") return inputTitle(ctx, generated);
-    if (use === "Regenerate") {
-      const again = await generatePrTitle(pi, ctx, changes!);
-      if (again) return inputTitle(ctx, again);
-    }
-  }
+  // Ticket IDs at the start of the branch or after a slash: ONO-123-x, joe/ono-123-x.
+  const ids = [
+    ...branch
+      .trim()
+      .matchAll(/(?:^|\/)([A-Za-z][A-Za-z0-9]{1,9}-\d+)(?=-|\/|$)/g),
+  ].map((m) => m[1].toUpperCase());
+  return [...new Set(ids)].map((id) => `Closes ${id}`);
 }
 
 function writeTempBody(body: string): string {
@@ -604,149 +427,236 @@ function writeTempBody(body: string): string {
   return path;
 }
 
+function parseLinear(raw: string): string[] {
+  return raw
+    .split(/[\n,]/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => (/^(Closes|Ref)\s/.test(l) ? l : `Closes ${l}`));
+}
+
+// Single conventional commit: use its subject. Otherwise ask pi, falling back
+// to the last commit subject.
+async function autoTitle(
+  pi: ExtensionAPI,
+  ctx: Ctx,
+  changes: Changes | undefined,
+): Promise<string | undefined> {
+  const subject =
+    (await tryExec(pi, ctx, "git", ["log", "-1", "--pretty=%s"], 5_000))?.trim() ?? "";
+  const commitCount = changes?.commits ? changes.commits.split("\n").length : 0;
+  if (commitCount === 1) {
+    const fromCommit = validTitle(subject);
+    if (fromCommit) return fromCommit;
+  }
+  if (changes) {
+    const generated = await generatePrTitle(pi, ctx, changes);
+    if (generated) return generated;
+  }
+  return validTitle(subject);
+}
+
+async function pushStatus(pi: ExtensionAPI, ctx: Ctx): Promise<string> {
+  const upstream = await tryExec(
+    pi,
+    ctx,
+    "git",
+    ["rev-parse", "--verify", "--quiet", "@{u}"],
+    5_000,
+  );
+  if (!upstream?.trim()) return "new branch";
+  const n = Number(
+    (await tryExec(pi, ctx, "git", ["rev-list", "--count", "@{u}..HEAD"], 5_000))?.trim() ?? 0,
+  );
+  return n ? `${n} unpushed` : "up to date";
+}
+
+interface PrState {
+  title?: string;
+  base: string;
+  draft: boolean;
+  reviewers: string[];
+  body?: string;
+  bodySource: "none" | "generated" | "edited";
+  linear: string[];
+  changes?: Changes;
+}
+
+function summaryLines(s: PrState, defaultBase: string | undefined, push: string): string[] {
+  const body = s.body
+    ? `${s.body.split("\n").length} lines, ${s.bodySource}`
+    : "none (gh fills from commits)";
+  return [
+    `Title      ${s.title ?? "(missing)"}`,
+    `Base       ${s.base || `${defaultBase ?? "repo default"} (default)`}`,
+    `Draft      ${s.draft ? "yes" : "no"}`,
+    `Reviewers  ${s.reviewers.join(", ") || "none"}`,
+    `Linear     ${s.linear.join(", ") || "none"}`,
+    `Body       ${body}`,
+    `Push       yes (${push})`,
+  ];
+}
+
+const ACTIONS = {
+  create: "Create",
+  title: "Edit title",
+  regenTitle: "Regenerate title",
+  body: "Edit body",
+  regenBody: "Regenerate body",
+  base: "Base",
+  draft: "Toggle draft",
+  reviewers: "Reviewers",
+  linear: "Linear",
+  cancel: "Cancel",
+} as const;
+
+// Loop until Create (true) or Cancel/Esc (false). The summary sits in a widget
+// above the editor while the menu is open.
+async function review(
+  pi: ExtensionAPI,
+  ctx: Ctx,
+  s: PrState,
+  defaultBase: string | undefined,
+): Promise<boolean> {
+  const push = await pushStatus(pi, ctx);
+  try {
+    for (;;) {
+      ctx.ui.setWidget("pr-create", summaryLines(s, defaultBase, push));
+      const pick = await ctx.ui.select("Review PR", Object.values(ACTIONS));
+      switch (pick) {
+        case undefined:
+        case ACTIONS.cancel:
+          return false;
+        case ACTIONS.create:
+          if (s.title) return true;
+          ctx.ui.notify("Title is required", "warning");
+          break;
+        case ACTIONS.title: {
+          const raw = await ctx.ui.input(
+            `Title (${TITLE_HINT}; empty = keep)`,
+            s.title ?? "",
+          );
+          if (!raw?.trim()) break;
+          const title = validTitle(raw);
+          if (title) s.title = title;
+          else ctx.ui.notify(`Invalid title, kept the old one: ${raw.trim()}`, "error");
+          break;
+        }
+        case ACTIONS.regenTitle:
+          if (s.changes) s.title = (await generatePrTitle(pi, ctx, s.changes)) ?? s.title;
+          else ctx.ui.notify("No branch diff, cannot generate", "warning");
+          break;
+        case ACTIONS.body: {
+          const body = await ctx.ui.editor("PR description", s.body ?? "");
+          if (body !== undefined) {
+            s.body = body.trim() || undefined;
+            s.bodySource = s.body ? "edited" : "none";
+          }
+          break;
+        }
+        case ACTIONS.regenBody: {
+          if (!s.changes) {
+            ctx.ui.notify("No branch diff, cannot generate", "warning");
+            break;
+          }
+          const body = await generatePrBody(pi, ctx, s.changes);
+          if (body) {
+            s.body = body;
+            s.bodySource = "generated";
+          }
+          break;
+        }
+        case ACTIONS.base: {
+          const base = await ctx.ui.input(
+            "Base branch (empty = repo default)",
+            defaultBase ?? "",
+          );
+          if (base === undefined) break;
+          s.base = base.trim();
+          s.changes = await computeBranchChanges(pi, ctx, s.base);
+          if (s.bodySource === "generated") {
+            ctx.ui.notify(
+              "Body was generated against the old base. Regenerate it if needed.",
+              "info",
+            );
+          }
+          break;
+        }
+        case ACTIONS.draft:
+          s.draft = !s.draft;
+          break;
+        case ACTIONS.reviewers: {
+          const reviewers = await pickReviewers(ctx);
+          if (reviewers) s.reviewers = reviewers;
+          break;
+        }
+        case ACTIONS.linear: {
+          const raw = await ctx.ui.editor(
+            "Linear links, one per line (Closes ABC-1 / Ref ABC-2; empty = none)",
+            s.linear.join("\n"),
+          );
+          if (raw !== undefined) s.linear = parseLinear(raw);
+          break;
+        }
+      }
+    }
+  } finally {
+    ctx.ui.setWidget("pr-create", undefined);
+  }
+}
+
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("pr-create", {
     description:
-      "Create a GitHub PR via ~/.local/bin/pr-create using interactive pi dialogs",
+      "Create a GitHub PR: fills every field automatically, then lets you review before creating",
     handler: async (rawArgs, ctx) => {
       if (!ctx.hasUI) {
         ctx.ui.notify("/pr-create requires interactive mode", "error");
         return;
       }
-      const initial = rawArgs ?? "";
-      const cancel = () => ctx.ui.notify("Cancelled", "info");
 
-      const modePick = await ctx.ui.select("Mode", [
-        "Automatic (sensible defaults, no prompts)",
-        "Interactive (ask for every field)",
-      ]);
-      if (!modePick) return cancel();
-      const automatic = modePick.startsWith("Automatic");
+      const defaultBase = await detectDefaultBranch(pi, ctx);
+      const s: PrState = {
+        title: validTitle(rawArgs ?? ""),
+        base: "",
+        draft: false,
+        reviewers: [],
+        bodySource: "none",
+        linear: await detectLinearFromBranch(pi, ctx),
+        changes: await computeBranchChanges(pi, ctx, ""),
+      };
+      if (!s.changes) {
+        ctx.ui.notify(
+          "Could not compute the branch diff, pi generation unavailable",
+          "warning",
+        );
+      }
+      s.title ??= await autoTitle(pi, ctx, s.changes);
+      if (s.changes) {
+        s.body = await generatePrBody(pi, ctx, s.changes);
+        if (s.body) s.bodySource = "generated";
+      }
 
-      let title: string | undefined;
-      let base = "";
-      let draft = false;
-      let reviewers: string[] = [];
-      let bodyPath: string | undefined;
-      let linear: string[] = [];
-      let autoPush = true;
-
-      if (automatic) {
-        const changes = await computeBranchChanges(pi, ctx, base);
-        title = await autoTitle(pi, ctx, initial);
-        if (!title && changes) title = await generatePrTitle(pi, ctx, changes);
-        if (!title) {
-          ctx.ui.notify(
-            "Could not auto-derive a title — falling back to interactive picker",
-            "info",
-          );
-          title = await buildTitle(ctx, pi, initial);
-          if (!title) return cancel();
-        }
-        if (changes) {
-          const body = await generatePrBody(pi, ctx, changes);
-          if (body) bodyPath = writeTempBody(body);
-        } else {
-          ctx.ui.notify(
-            "Could not compute the branch diff — skipping description generation",
-            "warning",
-          );
-        }
-      } else {
-        const detectedBase = await detectDefaultBranch(pi, ctx);
-        const basePick = await ctx.ui.select("Base branch", [
-          detectedBase
-            ? `Auto: ${detectedBase} (repo default)`
-            : "Auto: repo default",
-          "Enter manually",
-        ]);
-        if (!basePick) return cancel();
-        if (!basePick.startsWith("Auto:")) {
-          const baseRaw = await ctx.ui.input(
-            "Base branch (empty = repo default)",
-            detectedBase ?? "",
-          );
-          base = (baseRaw ?? "").trim();
-        }
-
-        const changes = await computeBranchChanges(pi, ctx, base);
-        if (!changes) {
-          ctx.ui.notify(
-            "Could not compute the branch diff — pi generation unavailable",
-            "warning",
-          );
-        }
-
-        title = await pickTitleInteractive(ctx, pi, initial, changes);
-        if (!title) return cancel();
-
-        const draftPick = await pickBoolWithAuto(ctx, "Draft PR?", false);
-        if (draftPick === undefined) return cancel();
-        draft = draftPick;
-
-        const reviewerPick = await pickReviewers(ctx);
-        if (reviewerPick === undefined) return cancel();
-        reviewers = reviewerPick;
-
-        const GENERATE = "Generate with pi";
-        const MANUAL = "Write manually in the editor";
-        const descPick = await ctx.ui.select("PR description", [
-          ...(changes ? [`Auto: ${GENERATE}`] : []),
-          MANUAL,
-          "Skip (no description)",
-        ]);
-        if (!descPick) return cancel();
-        if (descPick === MANUAL) {
-          const manual = await ctx.ui.editor("PR description", "");
-          if (manual?.trim()) bodyPath = writeTempBody(manual);
-        } else if (descPick.startsWith("Auto:")) {
-          const body = await generatePrBody(pi, ctx, changes!);
-          if (body !== undefined) {
-            const edit = await ctx.ui.confirm(
-              "Edit description?",
-              "Open the generated description in the editor before creating the PR?",
-            );
-            const finalBody = edit
-              ? ((await ctx.ui.editor("PR description", body)) ?? body)
-              : body;
-            bodyPath = writeTempBody(finalBody);
-          } else {
-            const next = await ctx.ui.select(
-              "Description generation failed — what now?",
-              ["Continue without a description", MANUAL, "Cancel"],
-            );
-            if (!next || next === "Cancel") return cancel();
-            if (next === MANUAL) {
-              const manual = await ctx.ui.editor("PR description", "");
-              if (manual?.trim()) bodyPath = writeTempBody(manual);
-            }
-          }
-        }
-
-        const linearPick = await pickLinearLinks(pi, ctx);
-        if (linearPick === undefined) return cancel();
-        linear = linearPick;
-
-        const pushPick = await pickBoolWithAuto(ctx, "Auto-push branch?", true);
-        if (pushPick === undefined) return cancel();
-        autoPush = pushPick;
+      if (!(await review(pi, ctx, s, defaultBase)) || !s.title) {
+        ctx.ui.notify("Cancelled", "info");
+        return;
       }
 
       const args = [
         "--yes",
+        "--no-generate",
+        "--push",
         "--title",
-        title,
-        draft ? "--draft" : "--no-draft",
-        autoPush ? "--push" : "--no-push",
-        "--no-edit",
-        "--no-generate-description",
+        s.title,
+        s.draft ? "--draft" : "--no-draft",
       ];
-      for (const r of reviewers.length ? reviewers : ["none"]) {
+      for (const r of s.reviewers.length ? s.reviewers : ["none"]) {
         args.push("--reviewers", r);
       }
-      if (base) args.push("--base", base);
-      if (bodyPath) args.push("--body-file", bodyPath);
-      for (const link of linear) args.push("--linear", link);
+      if (s.base) args.push("--base", s.base);
+      if (s.body) args.push("--body-file", writeTempBody(s.body));
+      // An empty --linear tells the script not to re-detect from the branch.
+      for (const link of s.linear.length ? s.linear : [""]) args.push("--linear", link);
 
       ctx.ui.setStatus("pr-create", "Creating PR…");
       let result;
@@ -774,11 +684,11 @@ export default function (pi: ExtensionAPI) {
           customType: "pr-create",
           content: [
             `Created pull request: ${url}`,
-            `Title: ${title}`,
-            base ? `Base: ${base}` : undefined,
-            reviewers.length ? `Reviewers: ${reviewers.join(", ")}` : undefined,
-            draft ? "Draft: yes" : undefined,
-            linear.length ? `Linear: ${linear.join(", ")}` : undefined,
+            `Title: ${s.title}`,
+            s.base ? `Base: ${s.base}` : undefined,
+            s.reviewers.length ? `Reviewers: ${s.reviewers.join(", ")}` : undefined,
+            s.draft ? "Draft: yes" : undefined,
+            s.linear.length ? `Linear: ${s.linear.join(", ")}` : undefined,
           ]
             .filter(Boolean)
             .join("\n"),
