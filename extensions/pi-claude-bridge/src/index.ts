@@ -1,4 +1,4 @@
-// Source: https://github.com/w-winter/dot314/tree/3e525d4a4108/extensions/pi-claude-bridge
+// Source: https://github.com/w-winter/dot314/tree/612a464f2710/extensions/pi-claude-bridge
 import {
 	getCurrentSystemMessage,
 	getCurrentSystemPrompt,
@@ -1498,7 +1498,9 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 			accountFailureRecorded || !account || !router || !failure.kind ||
 			failure.rateLimitInfo || wasAborted || options?.signal?.aborted
 		) return;
-		safeRouterCall("recordFailure", () => router.recordFailure(account.profileId, failure.kind!, queryModel.id));
+		const kind = failure.kind;
+		if (kind === "usage-credits") return;
+		safeRouterCall("recordFailure", () => router.recordFailure(account.profileId, kind, queryModel.id));
 		accountFailureRecorded = true;
 	};
 
@@ -1514,6 +1516,7 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 	// flag in case the two ever disagree. Shared by the stream-idle watchdog and
 	// the completion/error handlers below.
 	const requestRotation = (failure: ClaudeAttemptFailure): boolean => {
+		if (failure.kind === "usage-credits") return false;
 		recordAttemptFailure(failure);
 		const committed = abortCtx.committedOutput || attemptBuffer?.hasCommittedOutput === true;
 		const eligible = Boolean(account && router && failure.kind && !committed && !wasAborted && !options?.signal?.aborted && rotationState.attempts < MAX_ROTATION_ATTEMPTS);
@@ -1654,6 +1657,13 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 	let reentryStream = stream;
 	consumeQuery(sdkQuery, abortCtx, customToolNameToPi, queryModel, bridgeConfig, () => wasAborted, account, router, attemptFailure)
 		.then(async ({ capturedSessionId, failure }) => {
+			if (failure?.kind === "usage-credits" && abortCtx.restartRequest) {
+				const restart = abortCtx.restartRequest;
+				abortCtx.restartRequest = null;
+				abortCtx.currentPiStream = restart.stream;
+				abortCtx.resetTurnState(restart.model);
+				abortCtx.listenForAbort(restart.options?.signal);
+			}
 			if (Boolean(abortCtx.restartRequest)) return;
 			debug(`provider: consumeQuery completed, stopReason=${abortCtx.turnOutput?.stopReason}, failure=${failure?.kind ?? "none"}, aborted=${wasAborted}`);
 			if (streamIdleTimedOut) {
@@ -1694,6 +1704,7 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 					debug(`provider: terminal failure, persisting session=${failedSessionId.slice(0, 8)}, cursor=${cursor}, account=${account?.label ?? "legacy"}, droppedSteers=${droppedSteers.length}`);
 					persistSession({ sessionId: failedSessionId, cursor, cwd, ...accountScope, ...(droppedSteers.length > 0 ? { needsRebuild: true, rebuildReason: "dropped-steers" } : {}) });
 				}
+				if (failure.kind === "usage-credits") markRebuildForThisQuery({ reason: "usage-credits", forceRotate: true });
 				return;
 			}
 
@@ -1748,6 +1759,7 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 							// committed on this account.
 							recordAttemptFailure(continuation.failure);
 							if (!abortCtx.handledTerminalError) surfaceFailure(continuation.failure);
+							if (continuation.failure.kind === "usage-credits") markRebuildForThisQuery({ reason: "usage-credits", forceRotate: true });
 							// The shifted steer may never have reached the child, and any
 							// remaining ones certainly did not — the record must rebuild so
 							// they re-import from Pi history.

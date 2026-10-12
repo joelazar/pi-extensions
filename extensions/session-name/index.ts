@@ -1,4 +1,4 @@
-// Source: https://github.com/danielcherubini/pi-archimedes/blob/cad18609c6b1/packages/session-name/src/index.ts
+// Source: https://github.com/danielcherubini/pi-archimedes/blob/24883f0f7a30/packages/session-name/src/index.ts
 /**
  * Session Name
  *
@@ -162,7 +162,10 @@ export default function (pi: ExtensionAPI) {
 					pi.setSessionName(result.title);
 					void syncHerdr();
 				} else if (result.reason === "failed") {
-					failures++;
+					console.error("[session-name] failed:", result.error ?? "title request failed");
+					if (++failures === MAX_FAILURES && ctx.hasUI) {
+						ctx.ui.notify("Session naming failed 3 times. Check the model configuration or use /rename.", "warning");
+					}
 				}
 			})
 			.catch((error) => {

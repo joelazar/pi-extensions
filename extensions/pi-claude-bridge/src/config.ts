@@ -81,6 +81,7 @@ export interface Config {
 		 * (see USER_SCOPE_ONLY_PROVIDER_KEYS).
 		 */
 		inheritAnthropicEnv?: boolean;
+		allowUsageCredits?: boolean;
 	};
 }
 
@@ -274,7 +275,7 @@ export function tryParseJson(path: string): Partial<Config> {
 // resolve from USER scope and the env vars only, mirroring the
 // settingSourcesForQuery rationale — whoever writes user scope already owns
 // the process.
-const USER_SCOPE_ONLY_PROVIDER_KEYS = ["enableConnectors", "connectorWriteMode", "inheritAnthropicEnv"] as const;
+const USER_SCOPE_ONLY_PROVIDER_KEYS = ["enableConnectors", "connectorWriteMode", "inheritAnthropicEnv", "allowUsageCredits"] as const;
 
 function stripUserScopeOnlyProviderKeys(config: Partial<Config>): Partial<Config> {
 	if (!config.provider) return config;
@@ -360,6 +361,7 @@ function normalizeProviderConfig(provider: Config["provider"] | undefined): Conf
 	if (connectorWriteMode) out.connectorWriteMode = connectorWriteMode;
 	else delete out.connectorWriteMode;
 	if (typeof raw.inheritAnthropicEnv !== "boolean") delete out.inheritAnthropicEnv;
+	if (boolFrom(raw, "allowUsageCredits") !== true) delete out.allowUsageCredits;
 	return out;
 }
 

@@ -48,6 +48,7 @@ The bridge's `systemPrompt` configuration is independent of `anthropic-oauth-com
 - `systemPrompt.includeModelLine`: prepend `Active model: provider/modelId` to the replacement.
 - `systemPrompt.preservePiContext`: retain Pi-managed context after the replacement; defaults to `true`.
 - `provider.fastMode`, `provider.pathToClaudeCodeExecutable`: control how the Claude Code subprocess is launched.
+- `provider.allowUsageCredits`: `true` allows requests to use Claude usage credits instead of plan limits. Off by default, user `claude-bridge.json` only. Otherwise the bridge interrupts the query when Claude Code reports usage credits; that request may already be charged, so also disable usage credits in your Claude account settings.
 - `provider.forceEffort`, `provider.modelEffortOverrides`: pin a Claude effort for every request or per model. Override keys are bare ids (`claude-opus-4-8`), `pi-claude/<id>` or `*`; values are `low`, `medium`, `high`, `xhigh` or `max`; a per-model entry beats the global force.
 - `provider.settingSources`: explicitly load selected filesystem settings from Claude Code. By default, no settings load when connectors are disabled. When connectors are enabled, the bridge loads the user's settings.
 
