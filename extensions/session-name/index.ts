@@ -1,4 +1,4 @@
-// Source: https://github.com/danielcherubini/pi-archimedes/blob/24883f0f7a30/packages/session-name/src/index.ts
+// Source: https://github.com/danielcherubini/pi-archimedes/blob/9097946b4df5/packages/session-name/src/index.ts
 /**
  * Session Name
  *

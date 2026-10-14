@@ -1,4 +1,4 @@
-// Source: https://github.com/w-winter/dot314/tree/612a464f2710/extensions/pi-claude-bridge
+// Source: https://github.com/w-winter/dot314/tree/99efbfe8be4d/extensions/pi-claude-bridge
 import {
 	getCurrentSystemMessage,
 	getCurrentSystemPrompt,
@@ -36,7 +36,7 @@ import { appendIntegrityEntry, argKeyCount, argKeys, deleteSharedSessionLane, ge
 import { primeConnectorServers } from "./connector-runtime.ts";
 import { cancelScheduledSessionPersistence, conversationFingerprint, isForeignConversation, restoreSharedSessionFromPi, schedulePersistSharedSession, syncSharedSession, type SyncResult } from "./session-persistence.ts";
 import { UNVERIFIED_HISTORY_DIGEST, deliveredAssistantDigest, deliveredSuffix, historyDigest } from "./history-digest.ts";
-import { STREAM_IDLE_BACKOFF_HINT_MS, activeStreamIdleWatchdogs, buildStreamIdleTimeoutErrorMessage, createStreamIdleWatchdog, formatDurationShort, streamIdleTimeoutMsFromEnv } from "./stream-idle-watchdog.ts";
+import { REPEATED_STALL_ERROR_MESSAGE, STREAM_IDLE_BACKOFF_HINT_MS, activeStreamIdleWatchdogs, buildStreamIdleTimeoutErrorMessage, createStreamIdleWatchdog, formatDurationShort, streamIdleTimeoutMsFromEnv } from "./stream-idle-watchdog.ts";
 import { RATE_LIMIT_TOKEN, formatResetTimestamp } from "./rate-limit.ts";
 import { mapToolArgs, markAuthoritativeManifest, mcpToolAliases } from "./tool-mapping.ts";
 import { ABORTED_MESSAGE, endStreamForFailure, finalizeCurrentStream, finalizeToolUseTurnFromMcpInvocation, markContinuationStart, scheduleToolUseTurnEnd, terminalMessage, updateTurnResponseModel, withdrawCancelledToolCall } from "./assistant-stream.ts";
@@ -56,7 +56,7 @@ import {
 import { BRIDGE_ACCOUNT_HOST } from "./account-host.ts";
 import { registerBridgeCommands } from "./bridge-commands.ts";
 import { consumeQuery, emitRateLimitEvent, type ClaudeAttemptFailure } from "./consume-query.ts";
-import { buildClaudeQueryOptions } from "./query-options.ts";
+import { buildClaudeQueryOptions, outboundSystemPrompt } from "./query-options.ts";
 import { sdkQuery as startSdkQuery } from "./sdk-query.ts";
 import { UserMessageLedger, type ClassifyOptions } from "./user-message-ledger.ts";
 import { currentRequestLaneId, runInRequestLane } from "./request-lane.ts";
@@ -595,10 +595,12 @@ function applyProviderRegistration(trigger: string): void {
 
 export const HISTORY_REPLACED_PROMPT = "The conversation above was rewritten by Pi (compaction or history navigation). It is the complete current history, including the results of every tool call that has already run. Continue the turn from there, and do not repeat a tool call whose result is already above.";
 
-function restartContext(request: QueryRestartRequest): Context {
+const SYSTEM_INSTRUCTIONS_CHANGED_PROMPT = "Continue the turn using the current system instructions and the tool results above. Do not repeat a tool call whose result is already above.";
+
+function restartContext(request: Pick<QueryRestartRequest, "context" | "reason">): Context {
 	return {
 		...request.context,
-		messages: [...request.context.messages, { role: "user", content: HISTORY_REPLACED_PROMPT, timestamp: Date.now() }],
+		messages: [...request.context.messages, { role: "user", content: request.reason === "history-replaced" ? HISTORY_REPLACED_PROMPT : SYSTEM_INSTRUCTIONS_CHANGED_PROMPT, timestamp: Date.now() }],
 	};
 }
 
@@ -622,11 +624,10 @@ export function onPiHistoryReplaced(event: "session_compact" | "session_tree"): 
 	markSessionForRebuild({ reason: "history-replaced", forceRotate: restarts });
 }
 
-/** Restart the query of `queryCtx` on the history of `request` after Pi
- *  replaced its history. A child-side call is absent from Pi's transcript, so
- *  a query that made one must finish on its own history and the next turn
- *  must rebuild: returns false then. */
-function restartOnReplacedHistory(queryCtx: QueryContext, request: QueryRestartRequest): boolean {
+/** Restart the query on Pi's history after history or instruction changes.
+ *  A child-side call is absent from Pi's transcript, so a query that made
+ *  one cannot be replayed: returns false then. */
+function restartQueryOnHistory(queryCtx: QueryContext, request: QueryRestartRequest): boolean {
 	if (queryCtx.connectorCallAudit.size > 0 || queryCtx.foreignMcpCalls.size > 0) {
 		if (!queryCtx.reportedHistoryRestartDecline) {
 			queryCtx.reportedHistoryRestartDecline = true;
@@ -642,7 +643,7 @@ function restartOnReplacedHistory(queryCtx: QueryContext, request: QueryRestartR
 	queryCtx.piHistoryReplaced = false;
 	queryCtx.restartRequest = request;
 	queryCtx.currentPiStream = null;
-	debug("provider: restarting query on replaced history", request.context.messages.length);
+	debug("provider: restarting query", request.reason, request.context.messages.length);
 	abortSdkQuery(queryCtx.activeQuery!);
 	return true;
 }
@@ -746,7 +747,7 @@ function streamRequestInLane(
 			timing.kind = "tool-result";
 			attachRequestTiming(queryCtx, timing);
 		}
-		if (queryCtx.piHistoryReplaced && restartOnReplacedHistory(queryCtx, { model, context, options, stream, timing })) return stream;
+		if (queryCtx.piHistoryReplaced && restartQueryOnHistory(queryCtx, { reason: "history-replaced", model, context, options, stream, timing })) return stream;
 		queryCtx.currentPiStream = stream;
 		queryCtx.resetTurnState(model);
 		// Pi hands every provider call of one agent run the same signal, but
@@ -757,6 +758,13 @@ function streamRequestInLane(
 		if (options?.signal?.aborted) {
 			// Cancelled on entry: the query's abort path ends this stream.
 			debug("provider: tool-result callback arrived already cancelled; aborting the query");
+			return stream;
+		}
+		if (queryCtx.instructionsChanged?.(context.messages)) {
+			if (!restartQueryOnHistory(queryCtx, { reason: "system-instructions", model, context, options, stream, timing })) {
+				endStreamForFailure(queryCtx, { errorMessage: "System instructions changed, but Claude Code executed calls absent from Pi's history. The query was stopped because it cannot safely restart with the current instructions." });
+				queryCtx.onRequestAbort!();
+			}
 			return stream;
 		}
 		// A fresh callback separates handlers registered for settled turns from
@@ -945,7 +953,7 @@ function streamRequestInLane(
 				resultCount: deliveredResultIds.length,
 				release: releaseResults,
 				signal: options?.signal,
-				restartOnReplacedHistory: () => restartOnReplacedHistory(queryCtx, { model, context, options, stream, timing }),
+				restartOnReplacedHistory: () => restartQueryOnHistory(queryCtx, { reason: "history-replaced", model, context, options, stream, timing }),
 			});
 		}
 		return stream;
@@ -1097,7 +1105,9 @@ function streamRequestInLane(
 	ctx().ownedUserMessages = UserMessageLedger.fromHistory(context.messages);
 	ctx().acknowledgedToolResultIds.clear();
 	ctx().userInputNeedsRebuild = false;
+	ctx().instructionsChanged = null;
 	ctx().committedOutput = false;
+	ctx().apiResponded = false;
 	ctx().piHistoryReplaced = false;
 	ctx().reportedHistoryRestartDecline = false;
 	ctx().servedToolsSettling = null;
@@ -1386,6 +1396,18 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 		claudeExecutable,
 	});
 	const { queryOptions } = built;
+	const renderInstructions = (messages: Context["messages"]): string => outboundSystemPrompt({
+		queryModel,
+		bridgeConfig,
+		systemPrompt: getCurrentSystemPrompt(messages),
+		systemPromptOrigin: {
+			preamble: getCurrentSystemMessage(messages)?.sections && (getCurrentSystemMessage(messages)!.sections.preamble ?? ""),
+			sessionId: options?.sessionId,
+			cacheRetention: options?.cacheRetention,
+		},
+	}).prompt;
+	const currentInstructions = renderInstructions(context.messages);
+	attemptCtx.instructionsChanged = (messages) => renderInstructions(messages) !== currentInstructions;
 
 	debug("provider: fresh query",
 		`model=${queryModel.id} requested=${model.id} msgs=${context.messages.length} tools=${mcpTools.length}`,
@@ -1555,6 +1577,13 @@ function startFreshQuery(fresh: FreshQuery, syncResult: SyncResult): AssistantMe
 				quarantine("idle-timeout");
 				const errorMessage = buildStreamIdleTimeoutErrorMessage(timeoutMs);
 				debug("provider: stream idle timeout", `model=${queryModel.id}`, `timeout=${timeoutMs}`, `idle=${idleMs}`);
+				if (syncResult.sync.path === "rebuild" && syncResult.sync.mark === "idle-timeout" && !abortCtx.apiResponded) {
+					abortCtx.handledTerminalError = true;
+					debug("provider: consecutive unanswered attempts; stopping automatic retries");
+					endStreamForFailure(abortCtx, { errorMessage: REPEATED_STALL_ERROR_MESSAGE, fields: { streamIdleTimeoutMs: timeoutMs } });
+					requestAbort();
+					return;
+				}
 				const idleFailure: ClaudeAttemptFailure = { kind: "network", message: errorMessage };
 				// A managed attempt that went idle before ANY visible output can move
 				// to the next profile instead of surfacing the timeout. The idle

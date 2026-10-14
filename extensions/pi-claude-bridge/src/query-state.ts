@@ -29,6 +29,7 @@ export interface DeferredUserMessage {
 }
 
 export interface QueryRestartRequest {
+	reason: "history-replaced" | "system-instructions";
 	model: Model<any>;
 	context: Context;
 	options: SimpleStreamOptions | undefined;
@@ -333,6 +334,7 @@ export class QueryContext {
 	 *  are classified, so that callback's own results are never anchors.
 	 *  Query-scoped, cleared at fresh-query setup. */
 	acknowledgedToolResultIds = new Set<string>();
+	instructionsChanged: ((messages: Context["messages"]) => boolean) | null = null;
 	/** A mid-query user message could not be identified (see
 	 *  UserMessageLedger.classify), so a rebuild owns it: the record this query
 	 *  persists must carry needsRebuild. */
@@ -524,6 +526,7 @@ export class QueryContext {
 	// replayed on another account (duplicate side effects). Query-scoped, not per-turn:
 	// resetTurnState must not clear it.
 	committedOutput = false;
+	apiResponded = false;
 	/** True when this query holds NO claim on the module-level shared session
 	 *  record: a foreign-conversation one-shot, or a query quarantined after
 	 *  an abort or stream-idle timeout.

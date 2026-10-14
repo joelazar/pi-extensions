@@ -80,7 +80,7 @@ interface OutboundSystemPrompt {
  * the configured replacement; a prompt from compaction or an extension's own
  * call keeps its instructions. The preamble tells resolveSystemPrompt whether
  * Pi built the base. */
-function outboundSystemPrompt(
+export function outboundSystemPrompt(
 	input: Pick<BuildClaudeQueryOptionsInput, "queryModel" | "bridgeConfig" | "systemPromptOrigin"> & { systemPrompt: string },
 ): OutboundSystemPrompt {
 	const { queryModel, bridgeConfig, systemPrompt, systemPromptOrigin } = input;
