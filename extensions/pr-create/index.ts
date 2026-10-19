@@ -6,7 +6,8 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { resolveModels } from "../shared/models.ts";
+import { completeWithFallback } from "../shared/complete.ts";
+import { skillsPrompt } from "../shared/skills.ts";
 
 const SCRIPT = join(homedir(), ".local/bin/pr-create");
 const REVIEWERS_FILE =
@@ -195,112 +196,64 @@ function changesContext(changes: Changes): string {
   ].join("\n");
 }
 
-async function runPi(
-  pi: ExtensionAPI,
-  ctx: Ctx,
-  label: string,
-  prompt: string,
-  accept: (raw: string) => string | undefined,
-  extraArgs: string[],
-): Promise<string | undefined> {
-  const errors: string[] = [];
-  try {
-    const models = resolveModels(ctx, "fast").map((m) => `${m.provider}/${m.id}`);
-    if (models.length === 0) errors.push("no model with configured auth for role \"fast\"");
-    for (const model of models) {
-      ctx.ui.setStatus("pr-create", `${label} (${model})…`);
-      try {
-        const result = await pi.exec(
-          "pi",
-          [
-            "-p",
-            "--no-session",
-            "--model",
-            model,
-            "--thinking",
-            "off",
-            ...extraArgs,
-            prompt,
-          ],
-          { signal: ctx.signal, timeout: 120_000 },
-        );
-        if (result.code === 0) {
-          const out = accept(result.stdout);
-          if (out) return out;
-          errors.push(`${model}: unusable output`);
-        } else {
-          errors.push(
-            `${model} (exit ${result.code}): ${(result.stderr || result.stdout).trim().slice(0, 200)}`,
-          );
-        }
-      } catch (err) {
-        errors.push(`${model}: ${(err as Error).message}`);
-      }
-    }
-  } finally {
-    ctx.ui.setStatus("pr-create", undefined);
-  }
-  ctx.ui.notify(`${label} failed:\n${errors.join("\n")}`, "warning");
-  return undefined;
-}
+// PR body skills, inlined into the system prompt (see shared/skills.ts).
+const BODY_SKILLS = ["pr", "unslop"];
 
 async function generatePrTitle(
-  pi: ExtensionAPI,
+  _pi: ExtensionAPI,
   ctx: Ctx,
   changes: Changes,
 ): Promise<string | undefined> {
-  const prompt = [
-    "Generate a single GitHub pull request title for this branch.",
-    "",
-    "Requirements:",
-    "- Conventional commit format: <type>[(scope)]: <subject>",
-    `- Allowed types: ${ALLOWED_TYPES.join(" ")}`,
-    "- Lower case subject, no trailing period, max 72 characters.",
-    "- Do not invent details.",
-    "- Output only the title, nothing else.",
-    "",
-    changesContext(changes),
-  ].join("\n");
-  return runPi(
-    pi,
-    ctx,
-    "Generating PR title",
-    prompt,
-    (raw) => validTitle(raw.trim().split("\n")[0] ?? ""),
-    ["--no-tools"],
-  );
+  return completeWithFallback(ctx, {
+    label: "Generating PR title",
+    role: "fast",
+    systemPrompt: [
+      "You generate a single GitHub pull request title from a git diff.",
+      "",
+      "Requirements:",
+      "- Conventional commit format: <type>[(scope)]: <subject>",
+      `- Allowed types: ${ALLOWED_TYPES.join(" ")}`,
+      "- Lower case subject, no trailing period, max 72 characters.",
+      "- Do not invent details.",
+      "- Output only the title, nothing else.",
+    ].join("\n"),
+    userText: changesContext(changes),
+    accept: (raw) => validTitle(raw.trim().split("\n")[0] ?? ""),
+  });
 }
 
 async function generatePrBody(
-  pi: ExtensionAPI,
+  _pi: ExtensionAPI,
   ctx: Ctx,
   changes: Changes,
 ): Promise<string | undefined> {
-  const prompt = [
-    "Write the GitHub pull request body for this branch.",
-    "",
-    "Read the pr skill and follow its template: ## Summary, ## Evidence.",
-    "Then apply the unslop skill to the prose internally. Output only the final body.",
-    "",
-    "Requirements:",
-    "- Summary: pick the smallest visual (diff-sketch, call tree, file tree, pseudocode, or mermaid) that shows the change. One or two short lines of text at most.",
-    "- Evidence: you cannot run anything. Use tests added or changed in the diff, shown as pseudocode of the case that failed before and passes after. If the diff adds or changes no tests, omit the whole ## Evidence section. Never invent output.",
-    "- Do not invent details.",
-    "- Do not include Linear ticket lines.",
-    "",
-    "Output rules (strict):",
-    "- Output ONLY the raw PR description body as plain markdown.",
-    "- Do NOT include any preamble, closing remarks, or sign-offs.",
-    "- Do NOT wrap the body in code fences, blockquotes, or horizontal rules (---).",
-    "- Do NOT add a title/heading line.",
-    "",
-    changesContext(changes),
-  ].join("\n");
-  // The read tool lets pi load the pr and unslop skills.
-  return runPi(pi, ctx, "Generating PR description", prompt, sanitizePrBody, [
-    "--tools",
-    "read",
-  ]);
+  return completeWithFallback(ctx, {
+    label: "Generating PR description",
+    role: "fast",
+    systemPrompt: [
+      "You write GitHub pull request bodies from a git diff.",
+      "",
+      "Follow the pr skill template below: ## Summary, ## Evidence.",
+      "Apply the unslop skill below to the prose. Output only the final body.",
+      "",
+      "Requirements:",
+      "- Summary: pick the smallest visual (diff-sketch, call tree, file tree, pseudocode, or mermaid) that shows the change. One or two short lines of text at most.",
+      "- Evidence: you cannot run anything. Use tests added or changed in the diff, shown as pseudocode of the case that failed before and passes after. If the diff adds or changes no tests, omit the whole ## Evidence section. Never invent output.",
+      "- Do not invent details.",
+      "- Do not include Linear ticket lines.",
+      "- Never ask questions or describe what you would do; always write the body.",
+      "",
+      "Output rules (strict):",
+      "- Output ONLY the raw PR description body as plain markdown.",
+      "- Do NOT include any preamble, closing remarks, or sign-offs.",
+      "- Do NOT wrap the body in code fences, blockquotes, or horizontal rules (---).",
+      "- Do NOT add a title/heading line.",
+      "",
+      skillsPrompt(BODY_SKILLS),
+    ].join("\n"),
+    userText: changesContext(changes),
+    accept: (raw) => sanitizePrBody(raw) || undefined,
+  });
 }
 
 const HR_RE = /^[-*_]{3,}$/;
@@ -604,7 +557,36 @@ async function review(
   }
 }
 
+// Print-mode generators for the pr-create script: `pi -p --no-session "/pr-body [base]"`
+// writes the result to stdout, or exits 1 with the reason on stderr.
+function registerGenerator(
+  pi: ExtensionAPI,
+  name: string,
+  description: string,
+  generate: (pi: ExtensionAPI, ctx: Ctx, changes: Changes) => Promise<string | undefined>,
+) {
+  pi.registerCommand(name, {
+    description,
+    handler: async (rawArgs, ctx) => {
+      const changes = await computeBranchChanges(pi, ctx, rawArgs ?? "");
+      const out = changes
+        ? await generate(pi, ctx, changes)
+        : (process.stderr.write(`Could not resolve base '${rawArgs || "default"}'\n`), undefined);
+      if (!out) {
+        process.exitCode = 1;
+        if (ctx.hasUI) ctx.ui.notify(`/${name} produced no output`, "warning");
+        return;
+      }
+      if (ctx.hasUI) pi.sendMessage({ customType: name, content: out, display: true }, { triggerTurn: false });
+      else process.stdout.write(`${out}\n`);
+    },
+  });
+}
+
 export default function (pi: ExtensionAPI) {
+  registerGenerator(pi, "pr-title", "Generate a PR title for this branch: /pr-title [base]", generatePrTitle);
+  registerGenerator(pi, "pr-body", "Generate a PR body for this branch: /pr-body [base]", generatePrBody);
+
   pi.registerCommand("pr-create", {
     description:
       "Create a GitHub PR: fills every field automatically, then lets you review before creating",
