@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -578,7 +578,8 @@ function registerGenerator(
         return;
       }
       if (ctx.hasUI) pi.sendMessage({ customType: name, content: out, display: true }, { triggerTurn: false });
-      else process.stdout.write(`${out}\n`);
+      // pi -p redirects process.stdout.write to stderr, so write to fd 1 directly.
+      else writeSync(1, `${out}\n`);
     },
   });
 }
