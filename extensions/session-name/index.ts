@@ -1,4 +1,4 @@
-// Source: https://github.com/danielcherubini/pi-archimedes/blob/9097946b4df5/packages/session-name/src/index.ts
+// Source: https://github.com/danielcherubini/pi-archimedes/blob/a44f94267239/packages/session-name/src/index.ts
 /**
  * Session Name
  *
@@ -17,6 +17,7 @@
  * lock the plugin out.
  */
 
+import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveModels } from "../shared/models.ts";
 
@@ -93,11 +94,12 @@ async function generateTitle(ctx: ExtensionContext, scope: Scope, signal?: Abort
 		"</conversation>",
 	].join("\n");
 
+	const level = clampThinkingLevel(model, "minimal");
 	const response = await ctx.modelRegistry
 		.streamSimple(
 			model,
 			{ messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }] },
-			{ reasoning: "minimal", cacheRetention: "none", sessionId: crypto.randomUUID(), signal },
+			{ ...(level === "off" ? {} : { reasoning: level }), cacheRetention: "none", sessionId: crypto.randomUUID(), signal },
 		)
 		.result();
 
