@@ -227,6 +227,30 @@ export class EnhancedEditor extends CustomEditor {
             return;
         }
 
+        // Editor keeps these private; we rely on them to protect the unsent draft.
+        const history = this as unknown as { historyIndex: number; navigateHistory(direction: number): void };
+
+        if (
+            history.historyIndex > -1 &&
+            this.keybindingsManager.matches(data, "app.interrupt") &&
+            !this.isShowingAutocomplete()
+        ) {
+            history.historyIndex = 0;
+            history.navigateHistory(1);
+            this.tuiInstance.requestRender();
+            return;
+        }
+
+        if (
+            history.historyIndex === -1 &&
+            this.keybindingsManager.matches(data, "tui.editor.cursorUp") &&
+            this.getText() !== "" &&
+            this.getCursor().line === 0 &&
+            this.getCursor().col === 0
+        ) {
+            return;
+        }
+
         if (this.shouldHandleConfiguredDoubleEscape(data)) {
             this.handleConfiguredDoubleEscape();
             return;
