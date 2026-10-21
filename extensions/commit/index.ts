@@ -54,7 +54,7 @@ const commitStyleInstructions = `**IMPORTANT**: Before creating commit messages:
 
 const COMMIT_MESSAGE_SYSTEM_PROMPT = `You are a git commit message generator.
 
-Output ONLY the raw commit message text. No markdown formatting, no code fences, no preamble, no explanation.
+Put the commit message between a line containing only <commit_message> and a line containing only </commit_message>. Everything outside the tags is discarded, so put any reasoning before the opening tag and nothing but the raw message inside. No markdown formatting or code fences inside the tags.
 
 Follow the repository's existing commit style from recent commits.
 
@@ -223,13 +223,18 @@ function buildCommitUserMessage(
 
 function extractText(
   content: ReadonlyArray<{ type: string; text?: string }>,
-): string | null {
+): string {
   const text = content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
     .map((c) => c.text)
-    .join("\n")
-    .trim();
-  return text || null;
+    .join("\n");
+  const lines = text.split("\n");
+  const trimmed = lines.map((l) => l.trim());
+  const end = trimmed.lastIndexOf("</commit_message>");
+  const start = end < 0 ? -1 : trimmed.lastIndexOf("<commit_message>", end);
+  const message = start < 0 ? "" : lines.slice(start + 1, end).join("\n").trim();
+  if (!message) throw new Error("model output had no <commit_message> block");
+  return message;
 }
 
 function buildCommitUrl(remoteUrl: string, hash: string): string {
