@@ -14,7 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { AssistantMessageFrameEncoder, Type } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import { AssistantMessageFrameEncoder } from "./lib/assistant-message-frame.mjs";
 import { runAgentLoop } from "../../../node_modules/@earendil-works/pi-agent-core/dist/index.js";
 import { __testSetBridgeIntegrityState, __testSetSdkQueryFactory, streamClaudeAgentSdk } from "../src/index.ts";
 import { setExtensionApi } from "../src/bridge-state.ts";

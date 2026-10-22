@@ -25,7 +25,8 @@ import { openSession } from "cc-session-io";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { AssistantMessageFrameEncoder, Type } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
+import { AssistantMessageFrameEncoder } from "./lib/assistant-message-frame.mjs";
 import { SessionManager, convertToLlm } from "@earendil-works/pi-coding-agent";
 import { runAgentLoop, runAgentLoopContinue } from "../../../node_modules/@earendil-works/pi-agent-core/dist/index.js";
 import {

@@ -476,8 +476,9 @@ describe("mid-query user ownership survives context transforms", () => {
 			toolResult("call-1"),
 			custom("STEER-RELOCATED"),
 		], {
+			// Pi's context handlers see no system messages: [start, assistant, toolResult, custom].
 			project: (initial, assistant, suffix) => piTransform([...initial, assistant, ...suffix], ({ messages }) => ({
-				messages: [...messages.slice(0, 2), messages.at(-1), ...messages.slice(2, -1)],
+				messages: [messages[0], messages.at(-1), ...messages.slice(1, -1)],
 			})),
 		});
 		assert.deepEqual(result.messages.map((message) => message.role), ["system", "user", "user", "assistant", "toolResult"]);
@@ -497,10 +498,11 @@ describe("mid-query user ownership survives context transforms", () => {
 			user("STEER-AFTER"),
 		], {
 			earlier: [user("earlier-one: a long pasted log")],
-			// [system, earlier-one, start, assistant, toolResult, custom, STEER-AFTER]
-			// becomes [system, custom, start, assistant, toolResult, STEER-AFTER].
+			// The handler sees no system messages (Pi restores them):
+			// [earlier-one, start, assistant, toolResult, custom, STEER-AFTER]
+			// becomes [custom, start, assistant, toolResult, STEER-AFTER].
 			project: (initial, assistant, suffix) => piTransform([...initial, assistant, ...suffix], ({ messages }) => ({
-				messages: [messages[0], messages[5], ...messages.slice(2, 5), messages[6]],
+				messages: [messages[4], ...messages.slice(1, 4), messages[5]],
 			})),
 		});
 		assert.deepEqual(result.messages.map((message) => message.role), ["system", "user", "user", "assistant", "toolResult", "user"]);

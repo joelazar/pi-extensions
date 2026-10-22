@@ -1,12 +1,12 @@
 // Pi's REAL consumers of a provider's assistant event stream, for tests that
 // must hold the bridge to Pi's actual contract instead of a handwritten model:
 //
-// - pi-ai's AssistantMessageFrameEncoder, which coding-agent's
+// - pi-ai 0.87's AssistantMessageFrameEncoder (vendored), which coding-agent's
 //   openAssistantResponse runs on every event. It reads `event.partial` WHEN
 //   THE EVENT IS CONSUMED, and the consumer lags the producer (it awaits
 //   session writes between events), so every queued event must still make
 //   sense against the live partial as it is later.
-// - pi-ai's reduceAssistantMessageFrames, which rebuilds streaming snapshots
+// - pi-ai 0.87's reduceAssistantMessageFrames (vendored), which rebuilds streaming snapshots
 //   and interrupted-response recovery from those frames. It is append-only:
 //   every start must be at the current content length.
 // - coding-agent's toJsonEvent (RPC/JSON mode), which reads the partial's
@@ -14,7 +14,7 @@
 //
 // The persisted message is the done message (stream.result()); frames only
 // feed snapshots and recovery.
-import { AssistantMessageFrameEncoder, reduceAssistantMessageFrames } from "@earendil-works/pi-ai";
+import { AssistantMessageFrameEncoder, reduceAssistantMessageFrames } from "./assistant-message-frame.mjs";
 
 const codingAgentEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { toJsonEvent } = await import(new URL("./modes/json-event.js", codingAgentEntry).href);
