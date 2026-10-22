@@ -106,12 +106,12 @@ async function createForkedSession(
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("split-fork", {
     description:
-      "Fork this session into a new pi process in a Herdr or Ghostty tab/split. Usage: /split-fork [tab|split] [optional prompt] (defaults to tab)",
+      "Fork this session into a new pi process in a Herdr, Rex or Ghostty tab/split. Usage: /split-fork [tab|split] [optional prompt] (defaults to tab)",
     handler: async (args, ctx) => {
       const backend = detectTerminalBackend();
       if (!backend) {
         ctx.ui.notify(
-          "/split-fork needs Herdr (HERDR_ENV=1) or macOS with Ghostty.",
+          "/split-fork needs Herdr (HERDR_ENV=1), Rex (REX_SESSION) or macOS with Ghostty.",
           "warning",
         );
         return;

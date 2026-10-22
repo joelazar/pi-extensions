@@ -94,13 +94,13 @@ async function completeDirectories(
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("spawn", {
     description:
-      "Open a fresh pi in another directory (new Herdr or Ghostty tab/split). Usage: /spawn [tab|split] <dir>",
+      "Open a fresh pi in another directory (new Herdr, Rex or Ghostty tab/split). Usage: /spawn [tab|split] <dir>",
     getArgumentCompletions: completeDirectories,
     handler: async (args, ctx) => {
       const backend = detectTerminalBackend();
       if (!backend) {
         ctx.ui.notify(
-          "/spawn needs Herdr (HERDR_ENV=1) or macOS with Ghostty.",
+          "/spawn needs Herdr (HERDR_ENV=1), Rex (REX_SESSION) or macOS with Ghostty.",
           "warning",
         );
         return;
