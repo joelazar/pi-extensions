@@ -99,8 +99,20 @@ export default function askUser(pi: ExtensionAPI) {
       ];
       const otherIndex = options.length - 1;
 
-      const outcome = await oneAtATime(() => {
-        if (signal?.aborted) return Promise.resolve<Outcome>({ kind: "cancelled" });
+      const outcome = await oneAtATime(async () => {
+        if (signal?.aborted) return { kind: "cancelled" } as Outcome;
+        // ctx.ui.custom dialogs don't mark pi as blocked; the program-status and Herdr extensions pick this up.
+        pi.events.emit("herdr:blocked", { active: true, label: params.question, kind: "question" });
+        try {
+          return await showDialog();
+        } finally {
+          pi.events.emit("herdr:blocked", { active: false });
+        }
+      });
+
+      return reply(outcome);
+
+      function showDialog() {
         return ctx.ui.custom<Outcome>((tui, theme, _kb, done) => {
           let cursor = 0;
           let editing = false;
@@ -248,9 +260,7 @@ export default function askUser(pi: ExtensionAPI) {
             },
           };
         });
-      });
-
-      return reply(outcome);
+      }
     },
 
     renderCall(args, theme) {
