@@ -42,6 +42,7 @@ pi install "$PWD"
 | `skill-toggle`        | `/toggle-skills`                  | Enables and disables skills from a picker instead of editing frontmatter               |
 | `spawn`               | `/spawn`                          | Opens a new pi session in a Herdr, Rex or Ghostty tab or split                         |
 | `split-fork`          | `/split-fork`                     | Forks the current session into a new tab or split, carrying the history over           |
+| `subq`                | classifier `subq/subq-snap-1.1`   | SubQ Snap decision model for codemode `classify()`, like Jev; needs `SUBQ_API_KEY`     |
 | `thinking-back`       | `alt+shift+t`                     | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`           | `webfetch`, `websearch` tools     | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
