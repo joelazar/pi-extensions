@@ -1,4 +1,4 @@
-// Source: https://github.com/earendil-works/pi/blob/7c696c00f34c/packages/coding-agent/examples/extensions/custom-provider-anthropic/index.ts
+// Source: https://github.com/earendil-works/pi/blob/d5b3de22d0e2/packages/coding-agent/examples/extensions/custom-provider-anthropic/index.ts
 /**
  * Extra Anthropic OAuth Provider
  *

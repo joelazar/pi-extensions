@@ -23,7 +23,7 @@ import { getSessionPath } from "cc-session-io";
 import { readFileSync } from "fs";
 import { isDeepStrictEqual } from "node:util";
 import { isChildExecutedTool } from "./connectors.ts";
-import { PROVIDER_ID, convertPiMessages, sanitizeToolId, toolResultContentToAnthropic, unreplayableTrailingTurns, userMessageToAnthropic } from "./convert.ts";
+import { PROVIDER_ID, convertPiMessages, failedToolResultText, sanitizeToolId, toolResultContentToAnthropic, unreplayableTrailingTurns, userMessageToAnthropic } from "./convert.ts";
 import { debug } from "./debug.ts";
 import { toolResultToMcpContent } from "./extract-tool-results.ts";
 import { isPiDispatchable, mapToolArgs, mapToolName } from "./tool-mapping.ts";
@@ -146,9 +146,9 @@ function promptForm(messages: PiMessage[]): unknown {
  *  its call does. A failed result is stored as its error text instead, and a
  *  result with an image is output. */
 function deliveredResultForm(message: PiMessage, toolName: string | undefined): unknown {
+	if ((message as { isError?: boolean }).isError === true) return failedToolResultText(message.content as Parameters<typeof failedToolResultText>[0]);
 	const blocks = toolResultToMcpContent(message.content as Parameters<typeof toolResultToMcpContent>[0]);
-	const failed = (message as { isError?: boolean }).isError === true;
-	if (toolName !== undefined && !failed && blocks.every((block) => block.type === "text" && block.text.trim() === "")) return `(${toolName} completed with no output)`;
+	if (toolName !== undefined && blocks.every((block) => block.type === "text" && block.text.trim() === "")) return `(${toolName} completed with no output)`;
 	return blocks.map((block) =>
 		block.type === "text"
 			? { type: "text", text: block.text }
