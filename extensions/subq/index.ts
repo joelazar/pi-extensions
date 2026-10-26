@@ -9,8 +9,30 @@
  *   const snap = await models.getModelOfType("classifier", "subq", "subq-snap-1.1");
  *   await models.classify(snap, { state, questions });
  */
-import { classifySystemOne, type SystemOneTransport } from "@earendil-works/pi-ai/api/system-one-shared";
+import { existsSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import type { SystemOneTransport } from "@earendil-works/pi-ai/api/system-one-shared";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+// pi's extension loader prefix-aliases "@earendil-works/pi-ai" to compat.js, which breaks
+// subpath imports. Load the file by path from pi's own node_modules instead.
+// shortcut: assumes pi-ai sits in a node_modules dir reachable from pi's cli.js; drop once pi fixes the alias.
+let systemOne: Promise<typeof import("@earendil-works/pi-ai/api/system-one-shared")> | undefined;
+function loadSystemOne() {
+	systemOne ??= (async () => {
+		const cli = realpathSync(process.argv[1]);
+		const rel = "@earendil-works/pi-ai/dist/api/system-one-shared.js";
+		const file = createRequire(cli)
+			.resolve.paths(rel)
+			?.map((dir) => join(dir, rel))
+			.find((f) => existsSync(f));
+		if (!file) throw new Error(`SubQ: cannot locate ${rel} from ${cli}`);
+		return import(pathToFileURL(file).href);
+	})();
+	return systemOne;
+}
 
 const API = "subq-system-one";
 
@@ -58,7 +80,8 @@ export default function (pi: ExtensionAPI) {
 			},
 		],
 		classifiers: {
-			[API]: { classify: (model, context, options) => classifySystemOne(transport, model, context, options) },
+			[API]: { classify: async (model, context, options) =>
+					(await loadSystemOne()).classifySystemOne(transport, model, context, options), },
 		},
 	});
 }
