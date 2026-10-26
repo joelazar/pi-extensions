@@ -11,10 +11,10 @@ import { skillsPrompt } from "../shared/skills.ts";
 
 const SCRIPT = join(homedir(), ".local/bin/git-pr");
 const REVIEWERS_FILE =
-  process.env.PR_CREATE_REVIEWERS_FILE ??
+  process.env.GIT_PR_REVIEWERS_FILE ??
   join(
     process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
-    "pr-create/reviewers.conf",
+    "git-pr/reviewers.conf",
   );
 
 
