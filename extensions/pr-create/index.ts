@@ -9,7 +9,7 @@ import type {
 import { completeWithFallback } from "../shared/complete.ts";
 import { skillsPrompt } from "../shared/skills.ts";
 
-const SCRIPT = join(homedir(), ".local/bin/pr-create");
+const SCRIPT = join(homedir(), ".local/bin/git-pr");
 const REVIEWERS_FILE =
   process.env.PR_CREATE_REVIEWERS_FILE ??
   join(
@@ -554,7 +554,7 @@ async function review(
   }
 }
 
-// Print-mode generators for the pr-create script: `pi -p --no-session "/pr-body [base]"`
+// Print-mode generators for the git-pr script: `pi -p --no-session "/pr-body [base]"`
 // writes the result to stdout, or exits 1 with the reason on stderr.
 function registerGenerator(
   pi: ExtensionAPI,
