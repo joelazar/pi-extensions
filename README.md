@@ -17,7 +17,7 @@ npm install
 pi install "$PWD"
 ```
 
-`npm install` matters: `web-tools`, `sandbox`, `editor-enhancements`, and `pi-claude-bridge` have real runtime dependencies, and pi does not install them for you when a package comes from a local path.
+`npm install` matters: `web-tools`, `sandbox`, and `editor-enhancements` have real runtime dependencies, and pi does not install them for you when a package comes from a local path.
 
 ## What's in here
 
@@ -32,7 +32,6 @@ pi install "$PWD"
 | `footer`              | TUI footer                        | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files              |
 | `move-session`        | `/move-session <dir>`             | Moves the current session to another cwd and relaunches pi there                       |
 | `pr-create`           | `/pr-create`                      | Auto-fills title, body and Linear, then a review menu before `git pr`                  |
-| `pi-claude-bridge`    | provider `pi-claude`              | Runs Claude Code through the Claude Agent SDK as a pi provider, with pi's tools        |
 | `rtk`                 | bash rewriting                    | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
 | `sandbox`             | `/sandbox`, `--sandbox`           | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
 | `save-md`             | `/save-md`                        | Saves the latest assistant response as a Markdown file                                 |
@@ -45,7 +44,7 @@ pi install "$PWD"
 | `thinking-back`       | `alt+shift+t`                     | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`           | `webfetch`, `websearch` tools     | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
-Some of these started as other people's code. `btw` and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements`, `move-session`, and `pi-claude-bridge` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
+Some of these started as other people's code. `btw` and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements` and `move-session` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
 
 ## Layout
 
