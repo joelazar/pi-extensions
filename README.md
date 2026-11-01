@@ -27,7 +27,6 @@ pi install "$PWD"
 | `ask-user`            | `ask_user` tool                   | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off  |
 | `btw`                 | `/btw`                            | Side-chat popover for a quick question that shouldn't derail the main thread           |
 | `commit`              | `/commit`, `/atomic-commit`       | Writes commit messages that match the repo's existing style                            |
-| `context`             | `/context`                        | Shows what is loaded in the session: extensions, skills, prompts, MCP servers          |
 | `editor-enhancements` | editor, `@`, `!`, `alt+v`         | Custom editor: `@` file picker, shell completions, raw paste, cwd prompt history       |
 | `export-md`           | `/md`, `ctrl+shift+m`             | Renders the session to Markdown and opens it                                           |
 | `footer`              | TUI footer                        | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files              |
@@ -46,7 +45,7 @@ pi install "$PWD"
 | `thinking-back`       | `alt+shift+t`                     | Cycles the thinking level backwards, since the built-in binding only goes forward      |
 | `web-tools`           | `webfetch`, `websearch` tools     | Web search and page fetching through Kagi, with markdown, text, html, and image output |
 
-Some of these started as other people's code. `btw`, `context`, and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements`, `move-session`, and `pi-claude-bridge` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
+Some of these started as other people's code. `btw` and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements`, `move-session`, and `pi-claude-bridge` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
 
 ## Layout
 
