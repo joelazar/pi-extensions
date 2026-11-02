@@ -5,7 +5,7 @@ import { createOperationSignal, isOperationTimeoutError } from "./network.ts";
 import { SpawnCommandRunner } from "./providers/command.ts";
 import { KagiSearchProvider } from "./providers/kagi.ts";
 import type { SearchProvider } from "./providers/types.ts";
-import { appendExpandHint, appendExpandedPreview, getTextContent } from "./render.ts";
+import { appendExpandHint, appendExpandedPreview, getTextContent, type KeyHints } from "./render.ts";
 import { SearchWeb, type SearchWebError } from "./search-web.ts";
 import { getWebToolsSettings, SEARCH_RECENCIES, type ToolInputParseError } from "./settings.ts";
 import {
@@ -55,10 +55,10 @@ export function createWebSearchTool(composition?: WebSearchToolComposition) {
 				}),
 			),
 			recency: Type.Optional(
-				StringEnum([...SEARCH_RECENCIES], {
+				Type.Unsafe<SearchRecency>(StringEnum([...SEARCH_RECENCIES], {
 					description:
 						"Restrict results to a recent time window. 'any' means no restriction; other values map to the Kagi CLI --time flag.",
-				}),
+				})),
 			),
 		}),
 
@@ -127,6 +127,7 @@ export function createWebSearchTool(composition?: WebSearchToolComposition) {
 			result: { content: Array<{ type: string; text?: string }>; details?: WebSearchDetails; isError?: boolean },
 			options: { expanded: boolean; isPartial: boolean },
 			theme: RenderTheme,
+			context: KeyHints,
 		) {
 			if (options.isPartial) {
 				return new Text(theme.fg("warning", "Searching..."), 0, 0);
@@ -143,7 +144,7 @@ export function createWebSearchTool(composition?: WebSearchToolComposition) {
 			if (details?.truncated) {
 				text += theme.fg("warning", " [truncated]");
 			}
-			text = appendExpandHint(text, options.expanded);
+			text = appendExpandHint(text, options.expanded, context);
 
 			if (options.expanded) {
 				text = appendExpandedPreview(text, getTextContent(result.content), theme, { maxLines: 16, maxColumns: 220 });

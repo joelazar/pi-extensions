@@ -6,7 +6,7 @@ import { FetchPage, type FetchPageError } from "./fetch-page.ts";
 import { createOperationSignal, FetchPublicWebClient, isOperationTimeoutError } from "./network.ts";
 import { SpawnCommandRunner } from "./providers/command.ts";
 import { KagiSummarizeProvider, type SummarizeError, type SummarizeUrl } from "./providers/kagi-summarize.ts";
-import { appendExpandHint, appendExpandedPreview, getTextContent } from "./render.ts";
+import { appendExpandHint, appendExpandedPreview, getTextContent, type KeyHints } from "./render.ts";
 import { getWebToolsSettings, SUMMARY_TYPES, WEB_FETCH_FORMATS, type ToolInputParseError } from "./settings.ts";
 import {
 	TempFileToolOutputStore,
@@ -68,15 +68,15 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 		parameters: Type.Object({
 			url: Type.String({ description: "The http:// or https:// URL to fetch." }),
 			format: Type.Optional(
-				StringEnum([...WEB_FETCH_FORMATS], {
+				Type.Unsafe<WebFetchFormat>(StringEnum([...WEB_FETCH_FORMATS], {
 					description: "Return format. Defaults to the web-tools fetch default format setting.",
-				}),
+				})),
 			),
 			summarize: Type.Optional(
-				StringEnum([...SUMMARY_TYPES], {
+				Type.Unsafe<SummaryType>(StringEnum([...SUMMARY_TYPES], {
 					description:
 						"Summarize the URL with Kagi's summarizer instead of fetching it. Works on articles and YouTube videos. 'summary' is prose, 'keypoints' is a bullet list, 'eli5' is a simplified explanation.",
-				}),
+				})),
 			),
 			timeout: Type.Optional(
 				Type.Number({
@@ -168,6 +168,7 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 			result: { content: Array<{ type: string; text?: string }>; details?: WebFetchDetails; isError?: boolean },
 			options: { expanded: boolean; isPartial: boolean },
 			theme: RenderTheme,
+			context: KeyHints,
 		) {
 			if (options.isPartial) {
 				return new Text(theme.fg("warning", result.details?.summaryType ? "Summarizing..." : "Fetching..."), 0, 0);
@@ -190,7 +191,7 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 			if (details?.image) {
 				text += theme.fg("muted", " [image]");
 			}
-			text = appendExpandHint(text, options.expanded);
+			text = appendExpandHint(text, options.expanded, context);
 
 			if (options.expanded) {
 				if (details?.image) {

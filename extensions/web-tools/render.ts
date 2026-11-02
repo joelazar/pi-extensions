@@ -1,5 +1,3 @@
-import { keyHint } from "@earendil-works/pi-coding-agent";
-
 export function getTextContent(content: Array<{ type: string; text?: string }> | undefined): string {
 	if (!content) return "";
 	return content
@@ -28,7 +26,12 @@ export function appendExpandedPreview(
 	return base;
 }
 
-export function appendExpandHint(base: string, expanded: boolean): string {
+/** Pi's injected render context; an imported keyHint may be another package copy that misses user keybindings. */
+export interface KeyHints {
+	keyHint(keybinding: "app.tools.expand", description: string): string;
+}
+
+export function appendExpandHint(base: string, expanded: boolean, context: KeyHints): string {
 	if (expanded) return base;
-	return `${base} ${keyHint("app.tools.expand" as any, "for details")}`;
+	return `${base} ${context.keyHint("app.tools.expand", "for details")}`;
 }
