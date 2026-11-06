@@ -379,7 +379,7 @@ async function generateWithFallback(
         report(
           pi,
           ctx,
-          `${model.id} failed, falling back to ${next.id}`,
+          `${model.provider}/${model.id} failed (${err instanceof Error ? err.message : String(err)}), falling back to ${next.provider}/${next.id}`,
           "info",
         );
       }
