@@ -444,6 +444,15 @@ async function doCommit(
     report(pi, ctx, "No changes to commit", "info");
     return;
   }
+  if (statusLines.every((l) => l.startsWith("??"))) {
+    report(
+      pi,
+      ctx,
+      `Only untracked files, stage the ones to commit with \`git add\` first:\n${statusLines.map((l) => l.slice(3)).join("\n")}`,
+      "info",
+    );
+    return;
+  }
   const hasStagedChanges = statusLines.some(
     (l) => l[0] !== " " && l[0] !== "?",
   );
