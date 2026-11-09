@@ -127,8 +127,8 @@ async function launchRex(pi: ExtensionAPI, req: LaunchRequest): Promise<void> {
   const session = process.env.REX_SESSION!;
   const args =
     req.mode === "split"
-      ? ["split", "-s", session, "--split=right", "-c", req.cwd]
-      : ["window", "new", "-s", session, "-c", req.cwd];
+      ? ["split", "-s", session, "--split=right", "-c", req.cwd, "--interactive"]
+      : ["window", "new", "-s", session, "-c", req.cwd, "--interactive"];
   // Anchor the split on pi's own pane, not whatever pane has focus.
   if (req.mode === "split" && process.env.REX_BLOCK) args.push("-b", process.env.REX_BLOCK);
   if (req.mode === "tab" && req.label && req.lockLabel) args.push(req.label);
