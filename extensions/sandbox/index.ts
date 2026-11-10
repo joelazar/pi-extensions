@@ -128,6 +128,9 @@ function createGondolinReadOps(vm: VM, localCwd: string): ReadOperations {
   return {
     readFile: async (filePath) =>
       vm.fs.readFile(toGuestPath(localCwd, filePath)),
+    createReadStream: async function* (filePath, { signal }) {
+      yield* await vm.fs.readFileStream(toGuestPath(localCwd, filePath), { signal });
+    },
     access: async (filePath) => {
       await vm.fs.access(toGuestPath(localCwd, filePath));
     },

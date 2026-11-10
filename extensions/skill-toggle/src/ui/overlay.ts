@@ -10,6 +10,7 @@ export async function showSkillToggleUi(ctx: ExtensionContext, skills: SkillReco
     (tui, theme, _keybindings, done) => new SkillToggleOverlay(tui, theme, skills, done),
     {
       overlay: true,
+      blocked: { kind: "question", message: "Choose skills to toggle" },
       overlayOptions: {
         anchor: "center",
         width: "92%",
