@@ -6,7 +6,7 @@
  * `images: [{ mediaType, base64 }]` instead of data URLs.
  *
  * Usage (codemode), same as Jev:
- *   const snap = await models.getModelOfType("classifier", "subq", "subq-snap-1.1");
+ *   const snap = await models.getModelOfType("classifier", "subq", "subq-snap-1.2");
  *   await models.classify(snap, { state, questions });
  */
 import { existsSync, realpathSync } from "node:fs";
@@ -75,6 +75,16 @@ export default function (pi: ExtensionAPI) {
 				api: API,
 				input: ["text", "image"],
 				// $0.04 per 1M input tokens; output is free.
+				cost: { input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 393216,
+			},
+			{
+				type: "classifier",
+				id: "subq-snap-1.2",
+				name: "SubQ Snap 1.2",
+				api: API,
+				input: ["text", "image"],
+				// shortcut: price copied from 1.1, update once SubQ publishes 1.2 pricing.
 				cost: { input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 393216,
 			},
