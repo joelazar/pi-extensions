@@ -1,4 +1,4 @@
-// Source: https://github.com/earendil-works/pi/blob/86314bf38dd2/packages/coding-agent/examples/extensions/gondolin/index.ts
+// Source: https://github.com/earendil-works/pi/blob/ffb249b66242/packages/coding-agent/examples/extensions/gondolin/index.ts
 /**
  * Sandbox Tool Routing Extension
  *
