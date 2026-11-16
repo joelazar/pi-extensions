@@ -1,4 +1,4 @@
-import { completeSimple, type UserMessage } from "@earendil-works/pi-ai/compat";
+import type { UserMessage } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveModels, type ModelRole } from "./models.ts";
 
@@ -28,14 +28,11 @@ export async function completeWithFallback(
 			const name = `${model.provider}/${model.id}`;
 			if (ctx.hasUI) ctx.ui.setStatus("complete", `${opts.label} (${name})…`);
 			try {
-				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-				if (!auth.ok) throw new Error(auth.error);
-				const response = await completeSimple(
+				// Registry, not pi-ai/compat: it resolves auth and sees extension providers (claude-code).
+				const response = await ctx.modelRegistry.streamSimple(
 					model,
 					{ systemPrompt: opts.systemPrompt, messages: [message] },
 					{
-						apiKey: auth.apiKey,
-						headers: auth.headers,
 						signal: ctx.signal,
 						reasoning: "low" as const,
 						// Same override as commit: some reasoning models ignore named effort fields.
@@ -43,7 +40,7 @@ export async function completeWithFallback(
 							? { samplingParams: { reasoning_effort: "low" as const } }
 							: {}),
 					},
-				);
+				).result();
 				if (response.stopReason === "aborted") return undefined;
 				if (response.stopReason === "error") throw new Error(response.errorMessage || "model call failed");
 				const raw = response.content

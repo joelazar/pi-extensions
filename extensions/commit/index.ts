@@ -5,7 +5,6 @@
  * and conventions. Examines recent commits for format, emoji usage, and structure.
  */
 import {
-  completeSimple,
   type Api,
   type Model,
   type UserMessage,
@@ -273,9 +272,6 @@ async function generateCommitMessage(
   model: Model<Api>,
   userMessageText: string,
 ): Promise<string | null> {
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) throw new Error(auth.error);
-
   const userMessage: UserMessage = {
     role: "user",
     content: [{ type: "text", text: userMessageText }],
@@ -287,23 +283,20 @@ async function generateCommitMessage(
   // is merged into OpenAI-compatible payloads last, overriding named fields,
   // so forcing low effort here works regardless of the model's compat.
   const simpleOptions = {
-    apiKey: auth.apiKey,
-    headers: auth.headers,
     reasoning: "low" as const,
     ...(model.api === "openai-completions" && model.reasoning
       ? { samplingParams: { reasoning_effort: "low" as const } }
       : {}),
   };
+  // The registry resolves auth and also routes extension providers (claude-code);
+  // pi-ai/compat's completeSimple only sees built-in ones.
+  const complete = (opts: typeof simpleOptions & { signal?: AbortSignal }) =>
+    ctx.modelRegistry
+      .streamSimple(model, { systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT, messages: [userMessage] }, opts)
+      .result();
 
   if (!ctx.hasUI) {
-    const response = await completeSimple(
-      model,
-      {
-        systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
-        messages: [userMessage],
-      },
-      simpleOptions,
-    );
+    const response = await complete(simpleOptions);
 
     if (response.stopReason === "aborted") {
       return null;
@@ -327,17 +320,7 @@ async function generateCommitMessage(
     loader.onAbort = () => done(null);
 
     const doGenerate = async () => {
-      const response = await completeSimple(
-        model,
-        {
-          systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
-          messages: [userMessage],
-        },
-        {
-          ...simpleOptions,
-          signal: loader.signal,
-        },
-      );
+      const response = await complete({ ...simpleOptions, signal: loader.signal });
 
       if (response.stopReason === "aborted") {
         return null;
