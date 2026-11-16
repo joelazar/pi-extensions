@@ -317,7 +317,7 @@ async function generateCommitMessage(
       `Generating commit message using ${model.id}...`,
     );
 
-    loader.onAbort = () => done(null);
+    loader.onAbort = () => done({ text: null });
 
     const doGenerate = async () => {
       const response = await complete({ ...simpleOptions, signal: loader.signal });

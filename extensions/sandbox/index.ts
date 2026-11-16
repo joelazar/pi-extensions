@@ -331,7 +331,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     ui = ctx.ui;
-    enabled = pi.getFlag("sandbox");
+    enabled = pi.getFlag("sandbox") === true;
     if (enabled) await ensureVm(ctx);
     updateStatus();
   });
