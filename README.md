@@ -37,6 +37,7 @@ pi install "$PWD"
 | `save-md`             | `/save-md`                        | Saves the latest assistant response as a Markdown file                                 |
 | `session-recall`      | `session_search`, `session_query` | Searches past sessions with `rg` and has the `fast` model answer questions about one   |
 | `session-name`        | auto, `/rename`                   | Names the session (and Herdr pane title) after the first exchange; `/rename` redoes it |
+| `skill-autocomplete`  | `/skill:` anywhere                | Skill menu mid-message (`/skill:` auto, `/x` + Tab) and expands mid-message skills     |
 | `skill-toggle`        | `/toggle-skills`                  | Enables and disables skills from a picker instead of editing frontmatter               |
 | `spawn`               | `/spawn`                          | Opens a new pi session in a Herdr, Rex or Ghostty tab or split                         |
 | `split-fork`          | `/split-fork`                     | Forks the current session into a new tab or split, carrying the history over           |

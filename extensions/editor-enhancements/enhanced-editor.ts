@@ -271,6 +271,13 @@ export class EnhancedEditor extends CustomEditor {
         }
 
         super.handleInput(data);
+
+        // Core only auto-opens `/` menus at message start; open the skill-autocomplete menu for inline `/skill:`.
+        const { line, col } = this.getCursor();
+        const beforeCursor = (this.getLines()[line] ?? "").slice(0, col);
+        if (data.length === 1 && !this.isShowingAutocomplete() && /(?:^|\s)\/skill:[\w-]*$/.test(beforeCursor)) {
+            (this as unknown as { tryTriggerAutocomplete(): void }).tryTriggerAutocomplete();
+        }
     }
 
     private shouldHandleConfiguredDoubleEscape(data: string): boolean {
