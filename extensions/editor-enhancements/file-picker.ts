@@ -9,7 +9,6 @@
  * - Resume-picker-style search input editing
  * - Right arrow toggles files / enters directories when the search box is empty
  * - Shift+Tab to toggle options panel (gitignore, hidden files)
- * - Configurable Tab completion modes: segment or best-match
  * - Fuzzy search and glob patterns
  * - Git-aware file listing (respects .gitignore)
  * - Selected files injected as context on prompt submit
@@ -22,7 +21,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -34,18 +32,9 @@ interface FileEntry {
 	relativePath: string;
 }
 
-type TabCompletionMode = "segment" | "bestMatch";
-
 interface PickerState {
 	respectGitignore: boolean;
 	skipHidden: boolean;
-}
-
-interface PickerConfig {
-	respectGitignore?: boolean;
-	skipHidden?: boolean;
-	skipPatterns?: string[];
-	tabCompletionMode?: TabCompletionMode;
 }
 
 interface BrowserOption {
@@ -71,53 +60,14 @@ type FileBrowserAction =
 	| { action: "select"; selected: SelectedPath; paths: SelectedPath[] };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Config
-// ═══════════════════════════════════════════════════════════════════════════
-
-const DEFAULT_TAB_COMPLETION_MODE: TabCompletionMode = "bestMatch";
-
-function normalizeTabCompletionMode(value: unknown): TabCompletionMode {
-	return value === "segment" || value === "bestMatch" ? value : DEFAULT_TAB_COMPLETION_MODE;
-}
-
-const DEFAULT_CONFIG: PickerConfig = {
-	respectGitignore: true,
-	skipHidden: true,
-	skipPatterns: ["node_modules"],
-	tabCompletionMode: DEFAULT_TAB_COMPLETION_MODE,
-};
-
-const extensionDir = path.dirname(fileURLToPath(import.meta.url));
-
-function loadConfig(): PickerConfig {
-	const configPath = path.join(extensionDir, "file-picker.json");
-	try {
-		if (fs.existsSync(configPath)) {
-			const content = fs.readFileSync(configPath, "utf-8");
-			const custom = JSON.parse(content) as Partial<PickerConfig> & { tabCompletionMode?: unknown };
-			return {
-				...DEFAULT_CONFIG,
-				...custom,
-				tabCompletionMode: normalizeTabCompletionMode(custom.tabCompletionMode),
-			};
-		}
-	} catch {
-		// Ignore errors, use default
-	}
-	return DEFAULT_CONFIG;
-}
-
-const config = loadConfig();
-const skipPatterns = config.skipPatterns ?? ["node_modules"];
-const tabCompletionMode = config.tabCompletionMode ?? DEFAULT_TAB_COMPLETION_MODE;
-
-// ═══════════════════════════════════════════════════════════════════════════
 // State (per-session, reset on session switch)
 // ═══════════════════════════════════════════════════════════════════════════
 
+const skipPatterns = ["node_modules"];
+
 const state: PickerState = {
-	respectGitignore: config.respectGitignore ?? true,
-	skipHidden: config.skipHidden ?? true,
+	respectGitignore: true,
+	skipHidden: true,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -868,24 +818,10 @@ class FileBrowserComponent {
 	private completeQueryToClosestMatch(): void {
 		if (!this.query.trim()) return;
 
-		const match =
-			tabCompletionMode === "bestMatch"
-				? this.findBestMatchCompletion(this.query)
-				: this.findSegmentCompletionMatch(this.query);
-		if (!match) return;
-
-		if (tabCompletionMode === "bestMatch") {
-			if (match.path === this.query) return;
-			this.setSearchQuery(match.path, "end");
-			this.updateFilter(match.path);
-			return;
-		}
-
-		const completedQuery = this.completeOneWordPart(this.query, match.path);
-		if (!completedQuery || completedQuery === this.query) return;
-
-		this.setSearchQuery(completedQuery, "end");
-		this.updateFilter();
+		const match = this.findBestMatchCompletion(this.query);
+		if (!match || match.path === this.query) return;
+		this.setSearchQuery(match.path, "end");
+		this.updateFilter(match.path);
 	}
 
 	private getCompletionEntries(query: string): CompletionEntry[] {
@@ -898,11 +834,6 @@ class FileBrowserComponent {
 		});
 	}
 
-	private findSegmentCompletionMatch(query: string): CompletionEntry | null {
-		const entries = this.getCompletionEntries(query);
-		return this.findPrefixCompletionMatch(query, entries);
-	}
-
 	private findBestMatchCompletion(query: string): CompletionEntry | null {
 		const entries = this.getCompletionEntries(query);
 		return (
@@ -910,10 +841,6 @@ class FileBrowserComponent {
 			this.findScopedFuzzyCompletionMatch(query, entries) ??
 			this.findNormalizedPrefixCompletionMatch(query, entries)
 		);
-	}
-
-	private findPrefixCompletionMatch(query: string, entries: CompletionEntry[]): CompletionEntry | null {
-		return this.findDirectPrefixCompletionMatch(query, entries) ?? this.findNormalizedPrefixCompletionMatch(query, entries);
 	}
 
 	private findDirectPrefixCompletionMatch(query: string, entries: CompletionEntry[]): CompletionEntry | null {
@@ -956,67 +883,8 @@ class FileBrowserComponent {
 		return a.path.localeCompare(b.path);
 	}
 
-	private completeOneWordPart(query: string, completionPath: string): string {
-		const queryLower = query.toLowerCase();
-		const completionLower = completionPath.toLowerCase();
-
-		if (completionLower.startsWith(queryLower)) {
-			const end = this.nextWordPartBoundary(completionPath, query.length);
-			return completionPath.slice(0, end);
-		}
-
-		const longestCommonPrefix = this.commonPrefixLength(queryLower, completionLower);
-		if (longestCommonPrefix === 0) return query;
-
-		const end = this.nextWordPartBoundary(completionPath, longestCommonPrefix);
-		return completionPath.slice(0, end);
-	}
-
-	private nextWordPartBoundary(text: string, start: number): number {
-		if (start >= text.length) return text.length;
-
-		let index = start;
-		if (this.isAlphaNumeric(text[index])) {
-			while (index < text.length && this.isAlphaNumeric(text[index])) {
-				index += 1;
-			}
-			if (index < text.length && this.isWordSeparator(text[index])) {
-				index += 1;
-			}
-			return index;
-		}
-
-		while (index < text.length && this.isWordSeparator(text[index])) {
-			index += 1;
-		}
-		while (index < text.length && this.isAlphaNumeric(text[index])) {
-			index += 1;
-		}
-		if (index < text.length && this.isWordSeparator(text[index])) {
-			index += 1;
-		}
-		return index;
-	}
-
-	private isAlphaNumeric(char: string | undefined): boolean {
-		return char !== undefined && /[a-zA-Z0-9]/.test(char);
-	}
-
-	private isWordSeparator(char: string | undefined): boolean {
-		return char !== undefined && /[\/_.\-]/.test(char);
-	}
-
 	private normalizeAlnum(value: string): string {
 		return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-	}
-
-	private commonPrefixLength(left: string, right: string): number {
-		let index = 0;
-		const maxLength = Math.min(left.length, right.length);
-		while (index < maxLength && left[index] === right[index]) {
-			index += 1;
-		}
-		return index;
 	}
 
 	private updateFilter(preferredPath?: string): void {
@@ -1151,7 +1019,10 @@ class FileBrowserComponent {
 
 function toRefs(result: FileBrowserAction): string {
 	if (result.action === "cancel") return "";
-	return (result.paths ?? []).map((p) => `@${p.path}${p.isDirectory ? "/" : ""}`).join("\n");
+	return (result.paths ?? [])
+		.map((p) => `${p.path}${p.isDirectory ? "/" : ""}`)
+		.map((ref) => (ref.includes(" ") ? `@"${ref}"` : `@${ref}`))
+		.join("\n");
 }
 
 export function openFilePicker(border: (s: string) => string): { component: Component; result: Promise<string> } {

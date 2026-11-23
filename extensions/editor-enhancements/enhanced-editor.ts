@@ -9,22 +9,13 @@ import {
 } from "@earendil-works/pi-tui";
 import * as Clipboard from "@mariozechner/clipboard";
 
+import { INLINE_SKILL_RE } from "../skill-autocomplete/index.js";
 import { openFilePicker } from "./file-picker.js";
-import {
-    findCompletionShell,
-    getShellCompletions,
-    type ShellInfo,
-} from "./shell-completions.js";
 
 type EnhancedEditorOptions = {
-    doubleEscapeCommand: string | null;
-    canTriggerDoubleEscapeCommand: () => boolean;
-    commandRemap: Record<string, string>;
     history: string[];
     borderColor: (editor: EnhancedEditor) => (text: string) => string;
 };
-
-const DOUBLE_ESCAPE_WINDOW_MS = 500;
 
 function isAtCompletionContext(lines: string[], cursorLine: number, cursorCol: number): boolean {
     const line = lines[cursorLine] ?? "";
@@ -32,20 +23,7 @@ function isAtCompletionContext(lines: string[], cursorLine: number, cursorCol: n
     return Boolean(beforeCursor.match(/(?:^|[\s])@[^\s]*$/));
 }
 
-function isBashMode(lines: string[]): boolean {
-    const text = lines.join("\n").trimStart();
-    return text.startsWith("!") || text.startsWith("!!");
-}
-
-function extractCompletionTextUpToCursor(lines: string[], cursorLine: number, cursorCol: number): string {
-    const textLines = lines.slice(0, cursorLine + 1);
-    if (textLines.length > 0) {
-        textLines[textLines.length - 1] = (textLines[textLines.length - 1] ?? "").slice(0, cursorCol);
-    }
-    return textLines.join("\n");
-}
-
-function wrapProviderWithShellAndAtFiltering(provider: AutocompleteProvider, shell: ShellInfo): AutocompleteProvider {
+function wrapProviderWithAtFiltering(provider: AutocompleteProvider): AutocompleteProvider {
     return {
         triggerCharacters: provider.triggerCharacters,
 
@@ -61,14 +39,6 @@ function wrapProviderWithShellAndAtFiltering(provider: AutocompleteProvider, she
                 return null;
             }
 
-            if (isBashMode(lines)) {
-                const text = extractCompletionTextUpToCursor(lines, cursorLine, cursorCol);
-                const result = getShellCompletions(text, process.cwd(), shell);
-                if (result && result.items.length > 0) {
-                    return result;
-                }
-            }
-
             return provider.getSuggestions(lines, cursorLine, cursorCol, options);
         },
 
@@ -79,34 +49,10 @@ function wrapProviderWithShellAndAtFiltering(provider: AutocompleteProvider, she
             item: AutocompleteItem,
             prefix: string,
         ): { lines: string[]; cursorLine: number; cursorCol: number } {
-            if (isBashMode(lines)) {
-                const currentLine = lines[cursorLine] || "";
-                const prefixStart = cursorCol - prefix.length;
-                const beforePrefix = currentLine.slice(0, prefixStart);
-                const afterCursor = currentLine.slice(cursorCol);
-
-                // Don't add space after directories
-                const isDirectory = item.value.endsWith("/");
-                const suffix = isDirectory ? "" : " ";
-
-                const newLine = beforePrefix + item.value + suffix + afterCursor;
-                const newLines = [...lines];
-                newLines[cursorLine] = newLine;
-
-                return {
-                    lines: newLines,
-                    cursorLine,
-                    cursorCol: prefixStart + item.value.length + suffix.length,
-                };
-            }
-
             return provider.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
         },
 
         shouldTriggerFileCompletion(lines: string[], cursorLine: number, cursorCol: number): boolean {
-            if (isBashMode(lines)) {
-                return true;
-            }
             return provider.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
         },
     };
@@ -116,11 +62,7 @@ export class EnhancedEditor extends CustomEditor {
     private readonly tuiInstance: TUI;
     private picker: Component | null = null;
     private wrappedAutocompleteProvider = false;
-    private lastEscapeTime = 0;
-    private _onSubmitOriginal?: (text: string) => void;
     private readonly lockedBorderColor: (text: string) => string;
-
-    private shell: ShellInfo;
 
     constructor(
         tui: TUI,
@@ -131,7 +73,6 @@ export class EnhancedEditor extends CustomEditor {
     ) {
         super(tui, theme, keybindings, { embedWorkingStatus: true });
         this.tuiInstance = tui;
-        this.shell = findCompletionShell();
 
         this.lockedBorderColor = this.options.borderColor(this);
         Object.defineProperty(this, "borderColor", {
@@ -144,40 +85,12 @@ export class EnhancedEditor extends CustomEditor {
         for (const prompt of this.options.history) {
             this.addToHistory(prompt);
         }
-
-        // Editor declares onSubmit as a class field, so super() creates an own data
-        // property on the instance that shadows any prototype getter/setter. Replace
-        // it with an instance accessor so remapCommand intercepts all submissions.
-        Object.defineProperty(this, "onSubmit", {
-            get: (): ((text: string) => void) | undefined => {
-                const original = this._onSubmitOriginal;
-                if (!original) return undefined;
-                return (text: string) => original(this.remapCommand(text));
-            },
-            set: (fn: ((text: string) => void) | undefined) => {
-                this._onSubmitOriginal = fn;
-            },
-            configurable: true,
-            enumerable: true,
-        });
-    }
-
-    private remapCommand(text: string): string {
-        const trimmed = text.trimStart();
-        if (!trimmed.startsWith("/")) return text;
-
-        const match = trimmed.match(/^\/([^\s:]+)(.*)/s);
-        if (!match) return text;
-
-        const [, cmd, rest] = match;
-        const target = this.options.commandRemap[cmd!];
-        return target ? `/${target}${rest}` : text;
     }
 
     setAutocompleteProvider(provider: AutocompleteProvider): void {
         // Wrap once. If pi resets providers, we still want our wrapper.
         if (!this.wrappedAutocompleteProvider && provider) {
-            const wrapped = wrapProviderWithShellAndAtFiltering(provider, this.shell);
+            const wrapped = wrapProviderWithAtFiltering(provider);
             super.setAutocompleteProvider(wrapped);
             this.wrappedAutocompleteProvider = true;
             return;
@@ -251,15 +164,6 @@ export class EnhancedEditor extends CustomEditor {
             return;
         }
 
-        if (this.shouldHandleConfiguredDoubleEscape(data)) {
-            this.handleConfiguredDoubleEscape();
-            return;
-        }
-
-        if (!this.keybindingsManager.matches(data, "app.interrupt")) {
-            this.lastEscapeTime = 0;
-        }
-
         // Intercept @ at token start to open picker
         if (data === "@" && this.shouldTriggerFilePicker()) {
             if (this.isShowingAutocomplete()) {
@@ -275,33 +179,9 @@ export class EnhancedEditor extends CustomEditor {
         // Core only auto-opens `/` menus at message start; open the skill-autocomplete menu for inline `/skill:`.
         const { line, col } = this.getCursor();
         const beforeCursor = (this.getLines()[line] ?? "").slice(0, col);
-        if (data.length === 1 && !this.isShowingAutocomplete() && /(?:^|\s)\/skill:[\w-]*$/.test(beforeCursor)) {
+        if (data.length === 1 && !this.isShowingAutocomplete() && INLINE_SKILL_RE.test(beforeCursor)) {
             (this as unknown as { tryTriggerAutocomplete(): void }).tryTriggerAutocomplete();
         }
-    }
-
-    private shouldHandleConfiguredDoubleEscape(data: string): boolean {
-        return Boolean(
-            this.options.doubleEscapeCommand &&
-                this.keybindingsManager.matches(data, "app.interrupt") &&
-                !this.isShowingAutocomplete() &&
-                !this.getText().trim() &&
-                this.options.canTriggerDoubleEscapeCommand(),
-        );
-    }
-
-    private handleConfiguredDoubleEscape(): void {
-        const now = Date.now();
-        if (now - this.lastEscapeTime >= DOUBLE_ESCAPE_WINDOW_MS) {
-            this.lastEscapeTime = now;
-            return;
-        }
-
-        this.lastEscapeTime = 0;
-        const command = this.options.doubleEscapeCommand;
-        if (!command || !this.onSubmit) return;
-
-        this.onSubmit(`/${command}`);
     }
 
     private shouldTriggerFilePicker(): boolean {
