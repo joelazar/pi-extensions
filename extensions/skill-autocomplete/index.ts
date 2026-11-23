@@ -6,6 +6,7 @@
  * - `/<query>` after a space: skill menu on Tab only, so paths like ` /tmp` stay untouched
  * - On submit, every known `/skill:name` token is expanded into a <skill> block,
  *   since pi core only expands a skill at the very start of the message.
+ * - `/skills:` is accepted as a typo of `/skill:`; unknown skill names raise a warning.
  */
 
 import { readFileSync } from "node:fs";
@@ -16,8 +17,9 @@ import { type AutocompleteItem, type AutocompleteProvider, fuzzyFilter } from "@
 export type SkillEntry = { name: string; description?: string; filePath: string; baseDir?: string };
 
 const MAX_SUGGESTIONS = 20;
-const INLINE_RE = /(?:^|\s)(\/(?:skill:)?[\w-]*)$/;
-const TOKEN_RE = /(?<=^|\s)\/skill:([\w-]+)/g;
+export const INLINE_SKILL_RE = /(?:^|\s)\/skills?:[\w-]*$/;
+const INLINE_RE = /(?:^|\s)(\/(?:skills?:)?[\w-]*)$/;
+const TOKEN_RE = /(?<=^|\s)\/skills?:([\w-]+)/g;
 
 // Pi core owns `/cmd` at the very start of the first line.
 function isCoreSlashContext(cursorLine: number, beforeCursor: string): boolean {
@@ -35,9 +37,9 @@ export function suggestSkills(
   const prefix = beforeCursor.match(INLINE_RE)?.[1];
   if (!prefix) return null;
 
-  const explicit = prefix.startsWith("/skill:");
+  const explicit = prefix.includes(":");
   if (!explicit && !force) return null;
-  const query = explicit ? prefix.slice("/skill:".length) : prefix.slice(1);
+  const query = explicit ? prefix.slice(prefix.indexOf(":") + 1) : prefix.slice(1);
 
   const matches = explicit
     ? fuzzyFilter(skills, query, (s) => `${s.name} ${s.description ?? ""}`)
@@ -54,19 +56,23 @@ export function suggestSkills(
   };
 }
 
-export function expandInlineSkills(text: string, skills: SkillEntry[], read: (path: string) => string): string {
+export function expandInlineSkills(
+  text: string,
+  skills: SkillEntry[],
+  read: (path: string) => string,
+): { text: string; unknown: string[] } {
   const names = [...new Set([...text.matchAll(TOKEN_RE)].map((m) => m[1]!))];
+  const known = names.flatMap((name) => skills.filter((s) => s.name === name));
+  const unknown = names.filter((name) => !skills.some((s) => s.name === name));
   // Leave a lone leading /skill: to pi core, which also turns the rest into args.
-  if (names.length === 0 || (names.length === 1 && text.startsWith(`/skill:${names[0]}`))) return text;
+  if (known.length === 0 || (names.length === 1 && text.startsWith(`/skill:${names[0]}`))) return { text, unknown };
 
-  const blocks = names.flatMap((name) => {
-    const skill = skills.find((s) => s.name === name);
-    if (!skill) return [];
+  const blocks = known.map((skill) => {
     const body = stripFrontmatter(read(skill.filePath)).trim();
     const refs = skill.baseDir ? `References are relative to ${skill.baseDir}.\n\n` : "";
-    return [`<skill name="${skill.name}" location="${skill.filePath}">\n${refs}${body}\n</skill>`];
+    return `<skill name="${skill.name}" location="${skill.filePath}">\n${refs}${body}\n</skill>`;
   });
-  return blocks.length === 0 ? text : `${blocks.join("\n\n")}\n\n${text}`;
+  return { text: `${blocks.join("\n\n")}\n\n${text}`, unknown };
 }
 
 export default function skillAutocomplete(pi: ExtensionAPI): void {
@@ -83,7 +89,8 @@ export default function skillAutocomplete(pi: ExtensionAPI): void {
 
   pi.on("input", (event, ctx) => {
     try {
-      const text = expandInlineSkills(event.text, getSkills(), (p) => readFileSync(p, "utf8"));
+      const { text, unknown } = expandInlineSkills(event.text, getSkills(), (p) => readFileSync(p, "utf8"));
+      if (unknown.length > 0 && ctx.hasUI) ctx.ui.notify(`Unknown skill: ${unknown.join(", ")}`, "warning");
       return text === event.text ? { action: "continue" } : { action: "transform", text, images: event.images };
     } catch (err) {
       // Never drop the user's message over a skill read error.
