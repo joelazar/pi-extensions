@@ -4,7 +4,7 @@
  *
  * `session_search` runs `rg -i -F` over the session JSONL files and returns
  * the best matching sessions with snippets. `session_query` loads one session
- * and asks an LLM a question about it, dropping thinking and tool output.
+ * and asks an LLM a question about it, dropping thinking and truncating tool output.
  * Sessions larger than the model's context are windowed around the
  * question's keywords.
  *
@@ -25,7 +25,7 @@ import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Type } from "typebox";
 import { resolveModels } from "../shared/models.ts";
 
@@ -36,7 +36,8 @@ Focus on:
 - File paths and code changes mentioned
 - Key context the user is asking about
 
-Be concise and direct. If the information isn't in the session, say so.`;
+Be concise and direct. If the information isn't in the session, say so.
+Answer in neutral third person. Do not address the user by name.`;
 
 const MAX_SEARCH_RESULTS = 10;
 const MAX_SNIPPETS_PER_SESSION = 3;
@@ -137,7 +138,6 @@ function searchLines(query: string, filePath: string): string[] {
 function prepareRecallMessages(messages: Message[]): Message[] {
 	const prepared: Message[] = [];
 	for (const message of messages) {
-		if (message.role === "toolResult") continue;
 		if (message.role !== "assistant") {
 			prepared.push(message);
 			continue;
@@ -250,7 +250,7 @@ export default function sessionRecallExtension(pi: ExtensionAPI) {
 			return container;
 		},
 
-		async execute(_toolCallId, { query }, signal) {
+		async execute(_toolCallId, { query }, signal, _onUpdate, ctx) {
 			const sessionsDir = join(getAgentDir(), "sessions");
 			if (!existsSync(sessionsDir)) return errorResult("No sessions directory found.");
 
@@ -261,24 +261,27 @@ export default function sessionRecallExtension(pi: ExtensionAPI) {
 
 			let fileMatches: FileMatchCount[];
 			try {
-				fileMatches = searchFiles(query, sessionsDir);
+				const currentSession = ctx.sessionManager.getSessionFile();
+				fileMatches = searchFiles(query, sessionsDir).filter((m) => m.path !== currentSession);
 			} catch (err) {
 				return errorResult(`rg failed: ${err instanceof Error ? err.message : String(err)}`);
 			}
 			if (fileMatches.length === 0) return noMatches(`No sessions found matching "${query}".`);
 
 			const results: string[] = [];
-			const top = fileMatches
-				.sort((a, b) => b.count - a.count || b.path.localeCompare(a.path))
-				.slice(0, MAX_SEARCH_RESULTS);
+			const seenSnippets = new Set<string>();
+			const newestFirst = fileMatches.sort((a, b) => basename(b.path).localeCompare(basename(a.path)));
 
-			for (const { path: filePath, count } of top) {
-				if (signal?.aborted) break;
+			for (const { path: filePath, count } of newestFirst) {
+				if (signal?.aborted || results.length >= MAX_SEARCH_RESULTS) break;
 				const snippets = searchLines(query, filePath)
 					.map(extractMessageText)
 					.filter((msg) => msg !== null)
 					.map((msg) => `  [${msg.role}] ${snippetAround(msg.text, query)}`);
 				if (snippets.length === 0) continue;
+				const key = snippets.join("\n");
+				if (seenSnippets.has(key)) continue;
+				seenSnippets.add(key);
 
 				results.push(
 					`**${dateFromPath(filePath)}** · \`${projectFromPath(filePath)}\` · ${count} match${count > 1 ? "es" : ""}\n` +
@@ -306,7 +309,7 @@ export default function sessionRecallExtension(pi: ExtensionAPI) {
 		label: "Session Query",
 		description:
 			"Query a specific session file to get detailed information. Use after session_search to dig into a particular session, " +
-			"or when you already have a session path (e.g., from a handoff). Sends the conversation and tool calls, without assistant thinking or tool output, to an LLM for analysis.",
+			"or when you already have a session path (e.g., from a handoff). Sends the conversation, tool calls and truncated tool output, without assistant thinking, to an LLM for analysis.",
 		parameters: Type.Object({
 			sessionPath: Type.String({
 				description: "Full path to the session file (e.g., /home/user/.pi/agent/sessions/.../session.jsonl)",
