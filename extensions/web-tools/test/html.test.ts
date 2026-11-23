@@ -81,3 +81,10 @@ test("poor markdown conversion detection flags raw layout html", () => {
 	assert.equal(isPoorMarkdownConversion("<table><tr><td>raw</td></tr></table>"), true);
 	assert.equal(isPoorMarkdownConversion("# Heading\n\nA clean paragraph."), false);
 });
+
+test("htmlToMarkdown keeps every element of a bare HTML fragment", () => {
+	assert.equal(
+		htmlToMarkdown("<p>Title: Talk</p>\n<ul><li>First <strong>point</strong></li></ul>", "https://example.com/"),
+		"Title: Talk\n\n-   First **point**",
+	);
+});

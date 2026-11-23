@@ -2,16 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ok, type Result } from "../result.ts";
 import { SearchWeb } from "../search-web.ts";
-import { parsePublicHttpUrl, parseSearchQuery, type WebToolsSettings } from "../types.ts";
+import { parsePublicHttpUrl, parseSearchQuery } from "../types.ts";
 import type { NormalizedSearchResult, SearchProvider, SearchProviderError, SearchProviderRequest } from "../providers/types.ts";
-
-const testSearchSettings: WebToolsSettings["search"] = {
-	enabled: true,
-	provider: "kagi",
-	timeoutSeconds: 60,
-	defaultMaxResults: 8,
-	defaultRecency: "any",
-};
 
 class FakeSearchProvider implements SearchProvider {
 	readonly name = "kagi" as const;
@@ -39,7 +31,7 @@ test("SearchWeb returns provider results with query metadata", async () => {
 		snippet: "Documentation-safe example domain.",
 	};
 	const provider = new FakeSearchProvider(ok([exampleResult]));
-	const service = new SearchWeb({ provider, settings: testSearchSettings });
+	const service = new SearchWeb({ provider });
 
 	const result = await service.search({ query: query.value, maxResults: 8, recency: "any" });
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parsePublicHttpUrl } from "../types.ts";
-import { formatSearchResults } from "../websearch.ts";
+import { formatSearchResults } from "../tool-output.ts";
 
 test("formatSearchResults renders deterministic URL-forward output", () => {
 	const url = parsePublicHttpUrl("https://example.com/");

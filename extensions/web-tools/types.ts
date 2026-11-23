@@ -1,8 +1,6 @@
 import { Redacted, type Redacted as RedactedValue } from "./redacted.ts";
 import { err, ok, type Result } from "./result.ts";
 
-export const WEB_TOOLS_EXTENSION_NAME = "web-tools";
-
 /** A public HTTP(S) URL accepted by web-tools. */
 export type PublicHttpUrl = string & { readonly __brand: "PublicHttpUrl" };
 
@@ -30,6 +28,8 @@ export interface WebToolsSettings {
 		/** Kagi CLI executable, resolved through `PATH` when not absolute. */
 		readonly command: string;
 	};
+	/** `summarize` CLI executable used for YouTube summaries. */
+	readonly summarizeCommand: string;
 	readonly fetch: {
 		readonly defaultFormat: WebFetchFormat;
 		readonly timeoutSeconds: number;
@@ -40,8 +40,6 @@ export interface WebToolsSettings {
 		readonly fallbackUserAgent: string;
 	};
 	readonly search: {
-		readonly enabled: boolean;
-		readonly provider: SearchProviderName;
 		readonly timeoutSeconds: number;
 		readonly defaultMaxResults: number;
 		readonly defaultRecency: SearchRecency;
@@ -55,22 +53,6 @@ export interface ParsedContentType {
 	readonly kind: ContentKind;
 }
 
-export interface WebFetchDetails {
-	readonly requestedUrl: string;
-	readonly finalUrl: string;
-	readonly format: WebFetchFormat;
-	readonly status: number;
-	readonly mime: string;
-	readonly contentType: string;
-	readonly charset?: string;
-	readonly decoder?: string;
-	readonly bytes: number;
-	readonly image?: boolean;
-	readonly summaryType?: SummaryType;
-	readonly truncated?: boolean;
-	readonly fullOutputPath?: string;
-}
-
 export interface NormalizedSearchResult {
 	readonly title: string;
 	readonly url: PublicHttpUrl;
@@ -78,17 +60,6 @@ export interface NormalizedSearchResult {
 	readonly publishedAt?: string;
 	readonly source?: string;
 	readonly score?: number;
-}
-
-export interface WebSearchDetails {
-	readonly query: string;
-	readonly recency: SearchRecency;
-	readonly maxResults: number;
-	readonly provider: SearchProviderName;
-	readonly resultCount: number;
-	readonly truncated?: boolean;
-	readonly fullOutputPath?: string;
-	readonly results: readonly NormalizedSearchResult[];
 }
 
 /** Parse and normalize a public HTTP(S) URL from boundary input. */

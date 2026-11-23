@@ -1,4 +1,4 @@
-import { convert as convertHtmlToText, compile as compileHtmlToText } from "html-to-text";
+import { compile as compileHtmlToText } from "html-to-text";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 // turndown-plugin-gfm does not ship ESM-friendly typings.
@@ -89,7 +89,9 @@ const compiledHtmlToText = compileHtmlToText({
 });
 
 export function sanitizeHtml(rawHtml: string, baseUrl: string): string {
-	const { document } = parseHTML(rawHtml);
+	// linkedom keeps only the first element of a bare fragment, so wrap fragments in a document.
+	const isFragment = !/^\s*(<!doctype|<html)/i.test(rawHtml);
+	const { document } = parseHTML(isFragment ? `<html><body>${rawHtml}</body></html>` : rawHtml);
 	const root = extractReadableRoot(document);
 
 	for (const element of root.querySelectorAll(REMOVAL_SELECTOR)) {
@@ -144,10 +146,6 @@ export function htmlToText(rawHtml: string, baseUrl: string): string {
 	const sanitizedHtml = sanitizeHtml(rawHtml, baseUrl);
 	const text = htmlToTextConverter(sanitizedHtml);
 	return cleanupText(text);
-}
-
-export function htmlToTextFallback(rawHtml: string): string {
-	return cleanupText(convertHtmlToText(rawHtml, { wordwrap: false }));
 }
 
 export function isPoorMarkdownConversion(markdown: string): boolean {

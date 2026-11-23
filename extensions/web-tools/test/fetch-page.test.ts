@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ok, type Result } from "../result.ts";
-import { FetchPage } from "../fetch-page.ts";
+import { FetchPage, SCRIPT_RENDERED_HINT } from "../fetch-page.ts";
 import { parsePublicHttpUrl, type WebToolsSettings } from "../types.ts";
 import type { PublicWebClient, PublicWebError, PublicWebRequest, PublicWebResponse } from "../public-web-client.ts";
 
@@ -55,6 +55,29 @@ test("FetchPage converts HTML to markdown when requested", async () => {
 	assert.equal(result.value._tag, "Text");
 	assert.match(result.value._tag === "Text" ? result.value.text : "", /# Hello/);
 	assert.match(result.value._tag === "Text" ? result.value.text : "", /World/);
+});
+
+test("FetchPage flags large HTML pages with almost no readable text", async () => {
+	const shell = `<html><head><script>${"x".repeat(8000)}</script></head><body><div id="app">reconnecting…</div></body></html>`;
+	const service = new FetchPage({ publicWeb: new FakePublicWebClient(ok(response("text/html", shell))), settings: testFetchSettings });
+
+	const markdown = await service.fetch({ url: requestUrl, format: "markdown" });
+	assert.equal(markdown._tag, "ok");
+	assert.match(markdown.value._tag === "Text" ? markdown.value.text : "", /^reconnecting…\n\n\[Little readable text/);
+	assert.ok(markdown.value._tag === "Text" && markdown.value.text.endsWith(SCRIPT_RENDERED_HINT));
+
+	const html = await service.fetch({ url: requestUrl, format: "html" });
+	assert.ok(html._tag === "ok" && html.value._tag === "Text" && !html.value.text.includes(SCRIPT_RENDERED_HINT));
+});
+
+test("FetchPage does not flag small pages", async () => {
+	const service = new FetchPage({
+		publicWeb: new FakePublicWebClient(ok(response("text/html", "<html><body><p>Short page.</p></body></html>"))),
+		settings: testFetchSettings,
+	});
+
+	const result = await service.fetch({ url: requestUrl, format: "markdown" });
+	assert.ok(result._tag === "ok" && result.value._tag === "Text" && !result.value.text.includes(SCRIPT_RENDERED_HINT));
 });
 
 test("FetchPage returns raster image content", async () => {

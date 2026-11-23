@@ -123,12 +123,12 @@ export async function projectFetchPageResultToPiToolResult(
 	});
 }
 
-/** Project a Kagi summary to a Pi tool result with truncation protection. */
+/** Project a URL summary to a Pi tool result with truncation protection. */
 export async function projectSummarizeResultToPiToolResult(
 	result: SummarizeResult,
 	store: ToolOutputStore,
 ): Promise<Result<PiToolResult<WebFetchDetails>, ToolOutputStoreError>> {
-	const body = `Kagi ${result.summaryType} of ${result.url}\n\n${result.markdown}`;
+	const body = `Summary (${result.summaryType}) of ${result.url}\n\n${result.markdown}`;
 	const truncated = await projectTextOutput(body, {
 		store,
 		tempPrefix: "pi-webfetch-summary-",

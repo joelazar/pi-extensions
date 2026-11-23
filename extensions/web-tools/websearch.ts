@@ -4,13 +4,11 @@ import { Type } from "typebox";
 import { createOperationSignal, isOperationTimeoutError } from "./network.ts";
 import { SpawnCommandRunner } from "./providers/command.ts";
 import { KagiSearchProvider } from "./providers/kagi.ts";
-import type { SearchProvider } from "./providers/types.ts";
 import { appendExpandHint, appendExpandedPreview, getTextContent, type KeyHints } from "./render.ts";
 import { SearchWeb, type SearchWebError } from "./search-web.ts";
 import { getWebToolsSettings, SEARCH_RECENCIES, type ToolInputParseError } from "./settings.ts";
 import {
 	TempFileToolOutputStore,
-	formatSearchResults,
 	projectSearchWebResultToPiToolResult,
 	type PiToolResult,
 	type ToolOutputStore,
@@ -19,8 +17,6 @@ import {
 } from "./tool-output.ts";
 import { parseWebSearchToolParams } from "./websearch-input.ts";
 import type { ParseSearchQueryError, SearchRecency, WebToolsSettings } from "./types.ts";
-
-export { formatSearchResults };
 
 export interface WebSearchToolComposition {
 	readonly settings: WebToolsSettings;
@@ -81,7 +77,7 @@ export function createWebSearchTool(composition?: WebSearchToolComposition) {
 					query: parsed.value.query,
 					recency: parsed.value.recency,
 					maxResults: parsed.value.maxResults,
-					provider: actualComposition.settings.search.provider,
+					provider: "kagi",
 					resultCount: 0,
 					results: [],
 				},
@@ -158,25 +154,17 @@ export function createWebSearchTool(composition?: WebSearchToolComposition) {
 	};
 }
 
-export function toWebSearchToolError(error: WebSearchBoundaryError): Error {
+function toWebSearchToolError(error: WebSearchBoundaryError): Error {
 	return new Error(renderSafeWebSearchError(error));
 }
 
 function createDefaultWebSearchComposition(): WebSearchToolComposition {
 	const settings = getWebToolsSettings();
-	const provider = createSearchProvider(settings);
 	return {
 		settings,
-		searchWeb: new SearchWeb({ provider, settings: settings.search }),
+		searchWeb: new SearchWeb({ provider: new KagiSearchProvider(settings.kagi.command, new SpawnCommandRunner()) }),
 		outputStore: new TempFileToolOutputStore(),
 	};
-}
-
-function createSearchProvider(settings: WebToolsSettings): SearchProvider {
-	switch (settings.search.provider) {
-		case "kagi":
-			return new KagiSearchProvider(settings.kagi.command, new SpawnCommandRunner());
-	}
 }
 
 function toWebSearchBoundaryError(
@@ -204,8 +192,6 @@ function renderSafeWebSearchError(error: WebSearchBoundaryError): string {
 			return `Unknown websearch field: ${error.field}`;
 		case "EmptySearchQuery":
 			return "Search query cannot be empty";
-		case "SearchDisabled":
-			return "websearch is disabled in web-tools settings. Enable it to use this tool.";
 		case "SearchProviderUnavailable":
 			return "Kagi CLI unavailable. Install kagi-cli and run 'kagi auth' to enable websearch.";
 		case "SearchProviderCommandFailed":

@@ -112,15 +112,12 @@ export function parseKagiSummarizeOutput(
 		return err({ _tag: "SummarizerProtocolInvalid", reason: "Missing summary payload" });
 	}
 
-	const markdown = data["markdown"];
-	if (typeof markdown === "string" && markdown.trim()) {
-		return ok(markdown.trim());
-	}
-
-	// The subscriber summarizer only returns HTML in `output` for some engines.
-	const output = data["output"];
-	if (typeof output === "string" && output.trim()) {
-		return ok(htmlToMarkdown(output, url).trim());
+	for (const key of ["markdown", "output"]) {
+		const value = data[key];
+		if (typeof value === "string" && value.trim()) {
+			// Both fields can hold HTML depending on the summarizer engine.
+			return ok(/^\s*</.test(value) ? htmlToMarkdown(value, url).trim() : value.trim());
+		}
 	}
 
 	return err({ _tag: "SummarizerProtocolInvalid", reason: "Empty summary" });

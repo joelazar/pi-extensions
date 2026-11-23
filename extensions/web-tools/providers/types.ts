@@ -29,5 +29,3 @@ export interface SearchProvider {
 		options?: { readonly signal?: AbortSignal },
 	): Promise<Result<readonly NormalizedSearchResult[], SearchProviderError>>;
 }
-
-export type SearchRequest = SearchProviderRequest;

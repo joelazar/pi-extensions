@@ -78,7 +78,7 @@ export function parseWebFetchToolParams(
 		summarize = summarizeValue;
 	}
 
-	// Summaries wait on Kagi's summarizer, so they get their own, more generous budget.
+	// Summaries wait on an LLM (and a transcript for videos), so they get their own, more generous budget.
 	const timeoutBounds = summarize ? SUMMARIZE_TIMEOUT_SECONDS : FETCH_TIMEOUT_SECONDS;
 	const configuredTimeout = summarize ? settings.summarizeTimeoutSeconds : settings.timeoutSeconds;
 	const timeoutValue = raw["timeout"];

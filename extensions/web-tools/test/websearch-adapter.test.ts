@@ -9,6 +9,7 @@ import type { NormalizedSearchResult, SearchProvider, SearchProviderError, Searc
 
 const settings: WebToolsSettings = {
 	kagi: { command: "kagi" },
+	summarizeCommand: "summarize",
 	fetch: {
 		defaultFormat: "markdown",
 		timeoutSeconds: 30,
@@ -19,8 +20,6 @@ const settings: WebToolsSettings = {
 		fallbackUserAgent: "opencode",
 	},
 	search: {
-		enabled: true,
-		provider: "kagi",
 		timeoutSeconds: 60,
 		defaultMaxResults: 8,
 		defaultRecency: "any",
@@ -52,7 +51,6 @@ class UnusedOutputStore implements ToolOutputStore {
 
 test("websearch execute throws safe message for provider protocol failures", async () => {
 	const searchWeb = new SearchWeb({
-		settings: settings.search,
 		provider: new FakeProvider(
 			err({
 				_tag: "SearchProviderProtocolInvalid",

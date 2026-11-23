@@ -4,8 +4,6 @@ import { parseWebSearchToolParams } from "../websearch-input.ts";
 import type { WebToolsSettings } from "../types.ts";
 
 const testSearchSettings: WebToolsSettings["search"] = {
-	enabled: true,
-	provider: "kagi",
 	timeoutSeconds: 60,
 	defaultMaxResults: 8,
 	defaultRecency: "any",

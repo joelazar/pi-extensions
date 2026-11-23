@@ -6,6 +6,7 @@ import { FetchPage, type FetchPageError } from "./fetch-page.ts";
 import { createOperationSignal, FetchPublicWebClient, isOperationTimeoutError } from "./network.ts";
 import { SpawnCommandRunner } from "./providers/command.ts";
 import { KagiSummarizeProvider, type SummarizeError, type SummarizeUrl } from "./providers/kagi-summarize.ts";
+import { isYouTubeUrl, SummarizeCliProvider } from "./providers/summarize-cli.ts";
 import { appendExpandHint, appendExpandedPreview, getTextContent, type KeyHints } from "./render.ts";
 import { getWebToolsSettings, SUMMARY_TYPES, WEB_FETCH_FORMATS, type ToolInputParseError } from "./settings.ts";
 import {
@@ -25,14 +26,6 @@ import {
 	type WebToolsSettings,
 } from "./types.ts";
 import { parseWebFetchToolParams } from "./webfetch-input.ts";
-
-export {
-	OPENCODE_WEBFETCH_DEFAULT_USER_AGENT,
-	OPENCODE_WEBFETCH_FALLBACK_USER_AGENT,
-	createWebFetchHeaders,
-	getFallbackUserAgent,
-	shouldRetryWithFallbackUserAgent,
-} from "./fetch-page.ts";
 
 export interface WebFetchToolComposition {
 	readonly settings: WebToolsSettings;
@@ -58,12 +51,14 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 		name: "webfetch",
 		label: "Web Fetch",
 		description:
-			"Fetch a single URL and return readable markdown, text, raw HTML/source, or an inline raster image, or summarize it with Kagi.",
-		promptSnippet: "Fetch one public URL as markdown, text, html, or an image, or summarize it with Kagi",
+			"Fetch a single URL and return readable markdown, text, raw HTML/source, or an inline raster image, or summarize it (Kagi for pages, a long transcript-based summary for YouTube).",
+		promptSnippet: "Fetch one public URL as markdown, text, html, or an image, or summarize it (pages and YouTube videos)",
 		promptGuidelines: [
 			"Use webfetch when the user provides a URL or after websearch identifies a page to inspect.",
 			"Prefer webfetch format=markdown unless the user explicitly wants plain text or raw source.",
 			"Use summarize for long pages, paywalled or JS-heavy articles, and YouTube videos, where a plain fetch returns little usable text.",
+			"For YouTube, webfetch summarize builds a long summary from the transcript; use summarize=summary unless the user asks for keypoints or a simple explanation.",
+			"Omit format unless you need text or html; markdown is the default.",
 		],
 		parameters: Type.Object({
 			url: Type.String({ description: "The http:// or https:// URL to fetch." }),
@@ -75,7 +70,7 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 			summarize: Type.Optional(
 				Type.Unsafe<SummaryType>(StringEnum([...SUMMARY_TYPES], {
 					description:
-						"Summarize the URL with Kagi's summarizer instead of fetching it. Works on articles and YouTube videos. 'summary' is prose, 'keypoints' is a bullet list, 'eli5' is a simplified explanation.",
+						"Summarize the URL instead of fetching it. Articles go through Kagi; YouTube videos get a long transcript-based summary from the local summarize CLI. 'summary' is prose, 'keypoints' is a bullet list, 'eli5' is a simplified explanation.",
 				})),
 			),
 			timeout: Type.Optional(
@@ -157,7 +152,7 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 			let text = theme.fg("toolTitle", theme.bold("webfetch "));
 			text += theme.fg("accent", redactUrlCredentialsForDisplay(args.url));
 			if (args.summarize) {
-				text += theme.fg("muted", ` (kagi ${args.summarize})`);
+				text += theme.fg("muted", ` (summarize ${args.summarize})`);
 			} else if (args.format && args.format !== "markdown") {
 				text += theme.fg("muted", ` (${args.format})`);
 			}
@@ -209,16 +204,18 @@ export function createWebFetchTool(composition?: WebFetchToolComposition) {
 	};
 }
 
-export function toWebFetchToolError(error: WebFetchBoundaryError): Error {
+function toWebFetchToolError(error: WebFetchBoundaryError): Error {
 	return new Error(renderSafeWebFetchError(error));
 }
 
 function createDefaultWebFetchComposition(): WebFetchToolComposition {
 	const settings = getWebToolsSettings();
+	const kagi = new KagiSummarizeProvider(settings.kagi.command, new SpawnCommandRunner());
+	const video = new SummarizeCliProvider(settings.summarizeCommand, new SpawnCommandRunner());
 	return {
 		settings,
 		fetchPage: new FetchPage({ publicWeb: new FetchPublicWebClient(), settings: settings.fetch }),
-		summarizeUrl: new KagiSummarizeProvider(settings.kagi.command, new SpawnCommandRunner()),
+		summarizeUrl: { summarize: (input, options) => (isYouTubeUrl(input.url) ? video : kagi).summarize(input, options) },
 		outputStore: new TempFileToolOutputStore(),
 	};
 }
@@ -255,7 +252,7 @@ function renderSafeWebFetchError(error: WebFetchBoundaryError): string {
 		case "UrlCredentialsUnsupported":
 			return "URL credentials are not supported";
 		case "PublicWebRequestFailed":
-			return "Request failed";
+			return describeRequestFailure(error.cause);
 		case "PublicWebCancelled":
 			return "Web fetch cancelled";
 		case "PublicWebTimedOut":
@@ -281,13 +278,13 @@ function renderSafeWebFetchError(error: WebFetchBoundaryError): string {
 		case "HtmlConversionFailed":
 			return "HTML conversion failed";
 		case "SummarizerUnavailable":
-			return "Kagi CLI unavailable. Install kagi-cli and run 'kagi auth' to summarize URLs.";
+			return "Summarizer CLI unavailable. Pages need kagi-cli ('kagi auth'); YouTube needs the summarize CLI.";
 		case "SummarizerCommandFailed":
-			return `Kagi summarizer failed (exit ${error.exitCode ?? "signal"})`;
+			return `Summarizer failed (exit ${error.exitCode ?? "signal"})`;
 		case "SummarizerResponseTooLarge":
 			return `Summary response too large (${Math.floor(error.maxBytes / (1024 * 1024))}MB limit)`;
 		case "SummarizerProtocolInvalid":
-			return "Kagi summarizer returned an invalid response";
+			return "Summarizer returned an invalid response";
 		case "SummarizerReturnedError":
 			return error.safeMessage;
 		case "SummarizerCancelled":
@@ -295,6 +292,29 @@ function renderSafeWebFetchError(error: WebFetchBoundaryError): string {
 		case "TempFileWriteFailed":
 			return "Failed to write full webfetch output";
 	}
+}
+
+const NETWORK_ERROR_HINTS: Record<string, string> = {
+	ENOTFOUND: "DNS lookup failed, the host does not exist",
+	EAI_AGAIN: "DNS lookup timed out",
+	ECONNREFUSED: "connection refused",
+	ECONNRESET: "connection reset by the server",
+	ETIMEDOUT: "connection timed out",
+	EHOSTUNREACH: "host unreachable",
+	CERT_HAS_EXPIRED: "TLS certificate expired",
+	DEPTH_ZERO_SELF_SIGNED_CERT: "self-signed TLS certificate",
+	UNABLE_TO_VERIFY_LEAF_SIGNATURE: "TLS certificate could not be verified",
+	ERR_TLS_CERT_ALTNAME_INVALID: "TLS certificate does not match the host",
+};
+
+export function describeRequestFailure(cause: unknown): string {
+	const inner = cause instanceof Error && cause.cause instanceof Error ? cause.cause : cause;
+	const code = inner instanceof Error && "code" in inner && typeof inner.code === "string" ? inner.code : undefined;
+	if (!code) {
+		return "Request failed";
+	}
+	const hint = NETWORK_ERROR_HINTS[code];
+	return hint ? `Request failed (${code}: ${hint})` : `Request failed (${code})`;
 }
 
 function textContent(text: string) {

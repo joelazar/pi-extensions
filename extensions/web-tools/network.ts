@@ -18,19 +18,7 @@ const TEXT_MIME_TYPES = new Set([
 ]);
 const RASTER_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-export interface FetchWithRedirectsOptions {
-	headers: Record<string, string>;
-	signal?: AbortSignal;
-	maxRedirects: number;
-	blockPrivateHosts: boolean;
-}
-
-export interface FetchWithRedirectsResult {
-	response: Response;
-	finalUrl: URL;
-}
-
-export interface ReadBodyResult {
+interface ReadBodyResult {
 	buffer: Buffer;
 	bytes: number;
 }
@@ -66,67 +54,11 @@ export function isOperationTimeoutError(value: unknown): value is OperationTimeo
 	return value instanceof OperationTimeoutError || (typeof value === "object" && value !== null && "_tag" in value && value._tag === "OperationTimeout");
 }
 
-export function isAbortError(error: unknown): boolean {
+function isAbortError(error: unknown): boolean {
 	return error instanceof Error && error.name === "AbortError";
 }
 
-export function normalizeAndValidateUrl(rawUrl: string): URL {
-	const parsed = parsePublicHttpUrl(rawUrl);
-	if (parsed._tag === "err") {
-		throw new Error(renderSafeUrlParseError(parsed.error));
-	}
-	return new URL(parsed.value);
-}
-
-export async function fetchWithRedirects(
-	initialUrl: URL,
-	options: FetchWithRedirectsOptions,
-): Promise<FetchWithRedirectsResult> {
-	let currentUrl = initialUrl;
-	let redirects = 0;
-
-	while (true) {
-		assertUrlHasNoCredentials(currentUrl);
-		if (options.blockPrivateHosts) {
-			await assertPublicUrl(currentUrl);
-		}
-
-		const response = await fetch(currentUrl, {
-			method: "GET",
-			headers: options.headers,
-			signal: options.signal,
-			redirect: "manual",
-		});
-
-		if (isRedirectStatus(response.status)) {
-			await response.body?.cancel().catch(() => undefined);
-			const location = response.headers.get("location");
-			if (!location) {
-				throw new Error("Redirect response was missing a Location header");
-			}
-			if (redirects >= options.maxRedirects) {
-				throw new Error("Too many redirects while fetching URL");
-			}
-			let nextUrl: URL;
-			try {
-				nextUrl = new URL(location, currentUrl);
-			} catch {
-				throw new Error("Redirect response had an invalid Location header");
-			}
-			if (nextUrl.protocol !== "http:" && nextUrl.protocol !== "https:") {
-				throw new Error("Redirected to unsupported protocol");
-			}
-			assertUrlHasNoCredentials(nextUrl);
-			currentUrl = nextUrl;
-			redirects += 1;
-			continue;
-		}
-
-		return { response, finalUrl: currentUrl };
-	}
-}
-
-export async function readBodyWithLimit(
+async function readBodyWithLimit(
 	response: Response,
 	maxBytes: number,
 	signal?: AbortSignal,
@@ -211,36 +143,12 @@ export function decodeTextBuffer(buffer: Buffer, charset?: string): { text: stri
 	};
 }
 
-export function normalizeCharset(charset: string | undefined): string | undefined {
+function normalizeCharset(charset: string | undefined): string | undefined {
 	if (!charset) return undefined;
 	const normalized = charset.trim().toLowerCase();
 	if (!normalized) return undefined;
 	if (normalized === "utf8") return "utf-8";
 	return normalized;
-}
-
-async function assertPublicUrl(url: URL): Promise<void> {
-	const hostname = stripIpv6Brackets(url.hostname).toLowerCase();
-	if (isBlockedHostname(hostname)) {
-		throw new Error("Blocked private or local host");
-	}
-	if (isPrivateOrLocalIp(hostname)) {
-		throw new Error("Blocked private or local IP address");
-	}
-
-	try {
-		const records = await lookup(hostname, { all: true, verbatim: true });
-		for (const record of records) {
-			if (isPrivateOrLocalIp(record.address)) {
-				throw new Error("Blocked private or local IP address");
-			}
-		}
-	} catch (error) {
-		if (error instanceof Error && error.message === "Blocked private or local IP address") {
-			throw error;
-		}
-		// If DNS resolution fails, let the later fetch surface the real connectivity error.
-	}
 }
 
 function isRedirectStatus(status: number): boolean {
@@ -253,25 +161,6 @@ function isBlockedHostname(hostname: string): boolean {
 
 function stripIpv6Brackets(hostname: string): string {
 	return hostname.replace(/^\[/, "").replace(/\]$/, "");
-}
-
-function assertUrlHasNoCredentials(url: URL): void {
-	if (url.username || url.password) {
-		throw new Error("URL credentials are not supported");
-	}
-}
-
-function renderSafeUrlParseError(error: ParsePublicHttpUrlError): string {
-	switch (error._tag) {
-		case "EmptyUrl":
-			return "URL cannot be empty";
-		case "UnsupportedUrlProtocol":
-			return "URL must start with http:// or https://";
-		case "InvalidUrl":
-			return "Invalid URL";
-		case "UrlCredentialsUnsupported":
-			return "URL credentials are not supported";
-	}
 }
 
 export function isPrivateOrLocalIp(input: string): boolean {

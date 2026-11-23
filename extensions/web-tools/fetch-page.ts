@@ -8,6 +8,11 @@ export const OPENCODE_WEBFETCH_DEFAULT_USER_AGENT =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
 export const OPENCODE_WEBFETCH_FALLBACK_USER_AGENT = "opencode";
 
+const SCRIPT_RENDERED_MAX_TEXT_CHARS = 200;
+const SCRIPT_RENDERED_MIN_HTML_BYTES = 5 * 1024;
+export const SCRIPT_RENDERED_HINT =
+	"[Little readable text in a large HTML page; it is likely rendered by JavaScript. Try summarize, or format=html to find the data endpoints it loads.]";
+
 export interface FetchPageInput {
 	readonly url: PublicHttpUrl;
 	readonly format: WebFetchFormat;
@@ -100,6 +105,11 @@ export class FetchPage {
 		if (converted._tag === "err") {
 			return converted;
 		}
+		const looksScriptRendered =
+			parsedContentType.kind === "html" &&
+			input.format !== "html" &&
+			converted.value.trim().length < SCRIPT_RENDERED_MAX_TEXT_CHARS &&
+			response.value.bytes > SCRIPT_RENDERED_MIN_HTML_BYTES;
 
 		return ok({
 			_tag: "Text",
@@ -112,13 +122,13 @@ export class FetchPage {
 			charset: parsedContentType.charset,
 			decoder: decoded.decoder,
 			bytes: response.value.bytes,
-			text: converted.value,
+			text: looksScriptRendered ? `${converted.value}\n\n${SCRIPT_RENDERED_HINT}` : converted.value,
 		});
 	}
 }
 
 /** Return the Accept header value for a webfetch format. */
-export function getAcceptHeader(format: WebFetchFormat): string {
+function getAcceptHeader(format: WebFetchFormat): string {
 	switch (format) {
 		case "markdown":
 			return "text/markdown;q=1.0, text/x-markdown;q=0.9, text/plain;q=0.8, text/html;q=0.7, application/xhtml+xml;q=0.6, */*;q=0.1";
@@ -129,24 +139,10 @@ export function getAcceptHeader(format: WebFetchFormat): string {
 	}
 }
 
-/** Build legacy webfetch request headers for tests and UI-adjacent callers. */
-export function createWebFetchHeaders(accept: string, userAgent = OPENCODE_WEBFETCH_DEFAULT_USER_AGENT): Record<string, string> {
-	return {
-		"User-Agent": userAgent,
-		Accept: accept,
-		"Accept-Language": "en-US,en;q=0.9",
-	};
-}
-
 /** Return the configured fallback user agent or the web-tools default. */
 export function getFallbackUserAgent(configuredUserAgent?: string): string {
 	const trimmed = configuredUserAgent?.trim();
 	return trimmed || OPENCODE_WEBFETCH_FALLBACK_USER_AGENT;
-}
-
-/** Detect the Cloudflare challenge response that webfetch retries with a fallback user agent. */
-export function shouldRetryWithFallbackUserAgent(response: Pick<Response, "status" | "headers">): boolean {
-	return response.status === 403 && response.headers.get("cf-mitigated") === "challenge";
 }
 
 function convertText(

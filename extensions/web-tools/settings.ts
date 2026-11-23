@@ -1,9 +1,8 @@
-import type { SearchProviderName, SearchRecency, SummaryType, WebFetchFormat, WebToolsSettings } from "./types.ts";
+import type { SearchRecency, SummaryType, WebFetchFormat, WebToolsSettings } from "./types.ts";
 
 export const WEB_FETCH_FORMATS = ["markdown", "text", "html"] as const satisfies readonly WebFetchFormat[];
 export const SUMMARY_TYPES = ["summary", "keypoints", "eli5"] as const satisfies readonly SummaryType[];
 export const SEARCH_RECENCIES = ["any", "day", "week", "month", "year"] as const satisfies readonly SearchRecency[];
-export const SEARCH_PROVIDERS = ["kagi"] as const satisfies readonly SearchProviderName[];
 
 export const FETCH_TIMEOUT_SECONDS = {
 	default: 30,
@@ -12,9 +11,9 @@ export const FETCH_TIMEOUT_SECONDS = {
 } as const;
 
 export const SUMMARIZE_TIMEOUT_SECONDS = {
-	default: 120,
+	default: 300,
 	min: 1,
-	max: 300,
+	max: 600,
 } as const;
 
 export const SEARCH_TIMEOUT_SECONDS = {
@@ -39,6 +38,7 @@ export type ToolInputParseError =
 
 const DEFAULTS = {
 	kagiCommand: "kagi",
+	summarizeCommand: "summarize",
 	fetchDefaultFormat: "markdown",
 	fetchTimeoutSeconds: FETCH_TIMEOUT_SECONDS.default,
 	fetchSummarizeTimeoutSeconds: SUMMARIZE_TIMEOUT_SECONDS.default,
@@ -46,8 +46,6 @@ const DEFAULTS = {
 	fetchBlockPrivateHosts: true,
 	fetchMaxRedirects: FETCH_MAX_REDIRECTS,
 	fetchFallbackUserAgent: "opencode",
-	searchEnabled: true,
-	searchProvider: "kagi",
 	searchTimeoutSeconds: SEARCH_TIMEOUT_SECONDS.default,
 	searchDefaultMaxResults: SEARCH_MAX_RESULTS.default,
 	searchDefaultRecency: "any",
@@ -65,35 +63,6 @@ export function clampInteger(
 	return Math.max(bounds.min, Math.min(bounds.max, Math.round(value)));
 }
 
-export function parseOnOff(value: string | undefined, fallback: boolean): boolean {
-	if (!value) return fallback;
-	const normalized = value.trim().toLowerCase();
-	if (normalized === "on") return true;
-	if (normalized === "off") return false;
-	return fallback;
-}
-
-export function parseIntegerSetting(
-	value: string | undefined,
-	fallback: number,
-	options: { min?: number; max?: number } = {},
-): number {
-	const parsed = Number.parseInt(value?.trim() ?? "", 10);
-	if (!Number.isFinite(parsed)) return fallback;
-	if (options.min !== undefined && parsed < options.min) return fallback;
-	if (options.max !== undefined && parsed > options.max) return fallback;
-	return parsed;
-}
-
-export function parseEnumSetting<T extends string>(
-	value: string | undefined,
-	allowed: readonly T[],
-	fallback: T,
-): T {
-	if (!value) return fallback;
-	const normalized = value.trim() as T;
-	return allowed.includes(normalized) ? normalized : fallback;
-}
 
 /** Return hardcoded web-tools settings. */
 export function getWebToolsSettings(): WebToolsSettings {
@@ -101,6 +70,7 @@ export function getWebToolsSettings(): WebToolsSettings {
 		kagi: {
 			command: DEFAULTS.kagiCommand,
 		},
+		summarizeCommand: DEFAULTS.summarizeCommand,
 		fetch: {
 			defaultFormat: DEFAULTS.fetchDefaultFormat,
 			timeoutSeconds: DEFAULTS.fetchTimeoutSeconds,
@@ -111,8 +81,6 @@ export function getWebToolsSettings(): WebToolsSettings {
 			fallbackUserAgent: DEFAULTS.fetchFallbackUserAgent,
 		},
 		search: {
-			enabled: DEFAULTS.searchEnabled,
-			provider: DEFAULTS.searchProvider,
 			timeoutSeconds: DEFAULTS.searchTimeoutSeconds,
 			defaultMaxResults: DEFAULTS.searchDefaultMaxResults,
 			defaultRecency: DEFAULTS.searchDefaultRecency,

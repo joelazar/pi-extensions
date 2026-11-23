@@ -46,6 +46,15 @@ test("parseKagiSummarizeOutput prefers markdown and falls back to HTML output", 
 	});
 });
 
+test("parseKagiSummarizeOutput converts HTML in the markdown field", () => {
+	const url = mustUrl("https://example.com/post");
+
+	assert.deepEqual(
+		parseKagiSummarizeOutput('{"data":{"markdown":"<p>Title: Talk</p>\\n<ul><li>First <strong>point</strong></li></ul>"}}', url),
+		{ _tag: "ok", value: "Title: Talk\n\n-   First **point**" },
+	);
+});
+
 test("parseKagiSummarizeOutput rejects malformed or empty payloads", () => {
 	const url = mustUrl("https://example.com/post");
 

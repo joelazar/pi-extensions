@@ -1,13 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-	createWebFetchTool,
-	createWebFetchHeaders,
-	getFallbackUserAgent,
-	OPENCODE_WEBFETCH_DEFAULT_USER_AGENT,
-	OPENCODE_WEBFETCH_FALLBACK_USER_AGENT,
-	shouldRetryWithFallbackUserAgent,
-} from "../webfetch.ts";
+import { createWebFetchTool, describeRequestFailure } from "../webfetch.ts";
 
 test("webfetch execute rejects URL credentials with a safe message", async () => {
 	const tool = createWebFetchTool();
@@ -18,41 +11,22 @@ test("webfetch execute rejects URL credentials with a safe message", async () =>
 	);
 });
 
-test("createWebFetchHeaders uses the OpenCode browser-like default user agent", () => {
-	const headers = createWebFetchHeaders("text/html");
-	assert.equal(headers["User-Agent"], OPENCODE_WEBFETCH_DEFAULT_USER_AGENT);
-	assert.equal(headers.Accept, "text/html");
-	assert.equal(headers["Accept-Language"], "en-US,en;q=0.9");
+test("describeRequestFailure names the network error code", () => {
+	const dns = new TypeError("fetch failed", { cause: Object.assign(new Error("getaddrinfo ENOTFOUND x.invalid"), { code: "ENOTFOUND" }) });
+	assert.equal(describeRequestFailure(dns), "Request failed (ENOTFOUND: DNS lookup failed, the host does not exist)");
+
+	const unknown = new TypeError("fetch failed", { cause: Object.assign(new Error("boom"), { code: "UND_ERR_SOCKET" }) });
+	assert.equal(describeRequestFailure(unknown), "Request failed (UND_ERR_SOCKET)");
+
+	assert.equal(describeRequestFailure(new Error("no code")), "Request failed");
+	assert.equal(describeRequestFailure(undefined), "Request failed");
 });
 
-test("getFallbackUserAgent prefers the configured setting and otherwise falls back to opencode", () => {
-	assert.equal(getFallbackUserAgent("my-agent/1.0"), "my-agent/1.0");
-	assert.equal(getFallbackUserAgent("  custom-agent  "), "custom-agent");
-	assert.equal(getFallbackUserAgent(""), OPENCODE_WEBFETCH_FALLBACK_USER_AGENT);
-	assert.equal(getFallbackUserAgent("   "), OPENCODE_WEBFETCH_FALLBACK_USER_AGENT);
-	assert.equal(getFallbackUserAgent(undefined), OPENCODE_WEBFETCH_FALLBACK_USER_AGENT);
-});
+test("webfetch execute reports DNS failures with their cause", async () => {
+	const tool = createWebFetchTool();
 
-test("shouldRetryWithFallbackUserAgent only retries the Cloudflare challenge case", () => {
-	assert.equal(
-		shouldRetryWithFallbackUserAgent({
-			status: 403,
-			headers: new Headers({ "cf-mitigated": "challenge" }),
-		}),
-		true,
-	);
-	assert.equal(
-		shouldRetryWithFallbackUserAgent({
-			status: 403,
-			headers: new Headers(),
-		}),
-		false,
-	);
-	assert.equal(
-		shouldRetryWithFallbackUserAgent({
-			status: 429,
-			headers: new Headers({ "cf-mitigated": "challenge" }),
-		}),
-		false,
+	await assert.rejects(
+		tool.execute("id", { url: "https://pi-web-tools-test.invalid/" }),
+		(error: unknown) => error instanceof Error && /^Request failed \((ENOTFOUND|EAI_AGAIN)/.test(error.message),
 	);
 });

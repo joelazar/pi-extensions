@@ -2,13 +2,12 @@
 
 Pi extension that registers two public-web tools:
 
-- `webfetch` — fetch one public URL as markdown, text, html, or an inline raster image, or summarize it with Kagi
+- `webfetch` — fetch one public URL as markdown, text, html, or an inline raster image, or summarize it (Kagi for pages, the local `summarize` CLI for YouTube)
 - `websearch` — search the public web through the local [kagi-cli](https://github.com/kagisearch) binary
 
-Both Kagi-backed paths (`websearch`, and `webfetch summarize=…`) shell out to the local `kagi`
-binary, so nothing is sent to a third-party API and no extra credentials live in this extension.
-The `web-research` skill in `~/.agents/skills/web-research` covers what stays outside the extension:
-Kagi Quick Answer, Kagi Assistant, and second opinions from Google/Claude agents.
+`websearch` and page summaries shell out to the local `kagi` binary; YouTube summaries shell out to the
+local [`summarize`](https://github.com/steipete/summarize) CLI. No credentials live in this extension.
+The `research` skill in `~/.agents/skills/research` covers multi-source research and raw transcripts.
 
 ## Tools
 
@@ -18,14 +17,14 @@ Parameters:
 
 - `url` — required
 - `format` — optional: `markdown`, `text`, `html`
-- `summarize` — optional: `summary`, `keypoints`, `eli5` (routes to Kagi instead of fetching)
-- `timeout` — optional timeout in seconds, clamped to `1..120` for fetches and `1..300` for summaries
+- `summarize` — optional: `summary`, `keypoints`, `eli5` (summarizes instead of fetching)
+- `timeout` — optional timeout in seconds, clamped to `1..120` for fetches and `1..600` for summaries
 
 Current defaults:
 
 - `defaultFormat`: `markdown`
 - `timeoutSeconds`: `30`
-- `summarizeTimeoutSeconds`: `120`
+- `summarizeTimeoutSeconds`: `300`
 - `maxResponseBytes`: `5 MB`
 - `blockPrivateHosts`: `true`
 - `maxRedirects`: `5`
@@ -40,13 +39,17 @@ Behavior notes:
 - HTML is converted to markdown or text when requested
 - binary content is rejected
 - if a site returns `403` with `cf-mitigated: challenge`, the tool retries with the fallback user agent
+- network failures name the error code, e.g. `Request failed (ENOTFOUND: DNS lookup failed, the host does not exist)`
+- HTML pages over 5 KB that yield under 200 chars of text get a hint that the page is likely JavaScript-rendered
 
 Summarize notes:
 
-- runs `kagi summarize --subscriber --error-format json --summary-type <type> --url <url>`
-- `summarize` bypasses the HTTP fetch entirely, so it also works on YouTube videos and JS-heavy or paywalled articles
-- prefers the CLI's `data.markdown`, falling back to `data.output` converted from HTML
-- `format` is ignored while summarizing; output is always markdown
+- `summarize` bypasses the HTTP fetch entirely; `format` is ignored and output is always markdown
+- YouTube URLs (`youtube.com`, `youtu.be`) run `summarize <url> --json --length xl` (keypoints: `--length long`
+  with a bullet-list prompt, eli5: a plain-language prompt). It summarizes the transcript, so the result is
+  several KB, not a short blurb. Videos without a transcript fail with `No transcript available for this video`
+- other URLs run `kagi summarize --subscriber --error-format json --summary-type <type> --url <url>`, so this
+  also works on JS-heavy or paywalled articles. HTML in the response is converted to markdown
 
 ### `websearch`
 
@@ -58,8 +61,6 @@ Parameters:
 
 Current defaults:
 
-- `enabled`: `true`
-- `provider`: `kagi`
 - `timeoutSeconds`: `60`
 - `defaultMaxResults`: `8`
 - `defaultRecency`: `any`
@@ -76,59 +77,25 @@ Behavior notes:
 
 Requirements:
 
-- `kagi` on `PATH` and an authenticated `~/.kagi.toml` (`kagi auth`)
+- `kagi` on `PATH` with credentials (`KAGI_SESSION_TOKEN` in the environment pi starts from, or `kagi auth`)
+- `summarize` on `PATH` for YouTube summaries
 
 ## Configuration
 
-The extension has an internal settings shape:
-
-```ts
-{
-  kagi: {
-    command: string;
-  };
-  fetch: {
-    defaultFormat: "markdown" | "text" | "html";
-    timeoutSeconds: number;
-    summarizeTimeoutSeconds: number;
-    maxResponseBytes: number;
-    blockPrivateHosts: boolean;
-    maxRedirects: number;
-    fallbackUserAgent: string;
-  };
-  search: {
-    enabled: boolean;
-    provider: "kagi";
-    timeoutSeconds: number;
-    defaultMaxResults: number;
-    defaultRecency: "any" | "day" | "week" | "month" | "year";
-  };
-}
-```
-
-But in the current implementation, these are hardcoded defaults in `settings.ts`.
-
-That means:
-
-- `webfetch.format`, `webfetch.summarize`, and `webfetch.timeout` can be overridden per call
-- `websearch.maxResults` and `websearch.recency` can be overridden per call
-- the underlying defaults are not currently exposed through Pi settings, extension settings, or env vars
-
-To change the defaults, edit:
-
-- `home/.pi/agent/extensions/web-tools/settings.ts`
+Defaults are hardcoded in `settings.ts`; per-call parameters override format, summarize, timeout, maxResults and recency.
 
 ## Source of truth
 
-- extension entry: `home/.pi/agent/extensions/web-tools/index.ts`
-- settings/defaults: `home/.pi/agent/extensions/web-tools/settings.ts`
-- fetch Pi adapter: `home/.pi/agent/extensions/web-tools/webfetch.ts`
-- fetch service: `home/.pi/agent/extensions/web-tools/fetch-page.ts`
-- public web adapter: `home/.pi/agent/extensions/web-tools/network.ts`
-- search Pi adapter: `home/.pi/agent/extensions/web-tools/websearch.ts`
-- search service: `home/.pi/agent/extensions/web-tools/search-web.ts`
-- Kagi search adapter: `home/.pi/agent/extensions/web-tools/providers/kagi.ts`
-- Kagi summarizer adapter: `home/.pi/agent/extensions/web-tools/providers/kagi-summarize.ts`
-- Kagi result parser: `home/.pi/agent/extensions/web-tools/providers/kagi-results.ts`
-- command runner port: `home/.pi/agent/extensions/web-tools/providers/command.ts`
-- tool output projection: `home/.pi/agent/extensions/web-tools/tool-output.ts`
+- extension entry: `index.ts`
+- settings/defaults: `settings.ts`
+- fetch Pi adapter: `webfetch.ts`
+- fetch service: `fetch-page.ts`
+- public web adapter: `network.ts`
+- search Pi adapter: `websearch.ts`
+- search service: `search-web.ts`
+- Kagi search adapter: `providers/kagi.ts`
+- Kagi summarizer adapter: `providers/kagi-summarize.ts`
+- YouTube summarizer adapter: `providers/summarize-cli.ts`
+- Kagi result parser: `providers/kagi-results.ts`
+- command runner port: `providers/command.ts`
+- tool output projection: `tool-output.ts`
