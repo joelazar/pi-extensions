@@ -8,13 +8,6 @@
  *
  * Titles come from the first usable model of the "fast" role in
  * ~/.pi/agent/extension-models.json.
- *
- * Inside Herdr the name is reported as the pane's agent title
- * (`herdr pane report-metadata --title`). The herdr-auto-title plugin ranks
- * that above the terminal title, so tabs read `3 · repo › pi › <name>` while
- * the plugin keeps owning numbering, cwd, branch and manual-rename locks.
- * Renaming panes or tabs directly would register as a manual rename and
- * lock the plugin out.
  */
 
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -24,7 +17,6 @@ import { resolveModels } from "../shared/models.ts";
 const PER_MESSAGE_CHARS = 500;
 const CONVERSATION_CHARS = 40_000;
 const MAX_FAILURES = 3;
-const HERDR_SOURCE = "pi-session-name";
 
 type Scope = "first-exchange" | "whole";
 
@@ -75,7 +67,6 @@ type TitleResult = { ok: true; title: string } | { ok: false; reason: "skipped" 
 
 async function generateTitle(ctx: ExtensionContext, scope: Scope, signal?: AbortSignal): Promise<TitleResult> {
 	const lines = conversationLines(ctx, scope);
-	if (scope === "first-exchange" && lines.length < 2) return { ok: false, reason: "skipped" };
 	const conversation = fitConversation(lines);
 	if (!conversation) return { ok: false, reason: "skipped", error: "no conversation yet" };
 
@@ -107,6 +98,7 @@ async function generateTitle(ctx: ExtensionContext, scope: Scope, signal?: Abort
 	if (response.stopReason === "error") return { ok: false, reason: "failed", error: response.errorMessage };
 
 	const title = messageText(response.content)
+		.replace(/[*#`]/g, "")
 		.replace(/\s+/g, " ")
 		.replace(/^(["'])((?:(?!\1).)*)\1$/, "$2")
 		.slice(0, 80)
@@ -115,33 +107,12 @@ async function generateTitle(ctx: ExtensionContext, scope: Scope, signal?: Abort
 	return title ? { ok: true, title } : { ok: false, reason: "failed", error: "empty title" };
 }
 
-async function syncHerdrTitle(pi: ExtensionAPI): Promise<void> {
-	const paneId = process.env.HERDR_PANE_ID;
-	if (process.env.HERDR_ENV !== "1" || !paneId) return;
-	const name = pi.getSessionName();
-	const result = await pi.exec("herdr", [
-		"pane",
-		"report-metadata",
-		paneId,
-		"--source",
-		HERDR_SOURCE,
-		"--agent",
-		"pi",
-		...(name ? ["--title", name] : ["--clear-title"]),
-	]);
-	if (result.code !== 0) throw new Error(result.stderr.trim() || `herdr exited ${result.code}`);
-}
-
 export default function (pi: ExtensionAPI) {
 	let failures = 0;
 	let pending: AbortController | undefined;
 
-	const syncHerdr = () =>
-		syncHerdrTitle(pi).catch((error) => console.error("[session-name] herdr sync failed:", error));
-
 	pi.on("session_start", () => {
 		failures = 0;
-		void syncHerdr();
 	});
 
 	pi.on("session_shutdown", () => {
@@ -150,7 +121,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", (_event, ctx) => {
-		void syncHerdr();
 		if (pending || failures >= MAX_FAILURES) return;
 		if (pi.getSessionName() || !ctx.sessionManager.getSessionFile()) return;
 
@@ -162,7 +132,6 @@ export default function (pi: ExtensionAPI) {
 				if (result.ok) {
 					if (pi.getSessionName()) return;
 					pi.setSessionName(result.title);
-					void syncHerdr();
 				} else if (result.reason === "failed") {
 					console.error("[session-name] failed:", result.error ?? "title request failed");
 					if (++failures === MAX_FAILURES && ctx.hasUI) {
@@ -188,12 +157,7 @@ export default function (pi: ExtensionAPI) {
 				const result = await generateTitle(ctx, "whole");
 				if (result.ok) {
 					pi.setSessionName(result.title);
-					const herdrError = await syncHerdrTitle(pi).then(
-						() => undefined,
-						(error) => (error instanceof Error ? error.message : String(error)),
-					);
-					if (herdrError) ctx.ui.notify(`Session renamed: ${result.title} (herdr: ${herdrError})`, "warning");
-					else ctx.ui.notify(`Session renamed: ${result.title}`, "info");
+					ctx.ui.notify(`Session renamed: ${result.title}`, "info");
 				} else {
 					ctx.ui.notify(`Rename ${result.reason}${result.error ? `: ${result.error}` : ""}`, "warning");
 				}
