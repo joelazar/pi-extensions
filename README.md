@@ -17,39 +17,35 @@ npm install
 pi install "$PWD"
 ```
 
-`npm install` matters: `web-tools`, `sandbox`, and `editor-enhancements` have real runtime dependencies, and pi does not install them for you when a package comes from a local path.
+`npm install` matters: `web-tools` and `editor-enhancements` have real runtime dependencies, and pi does not install them for you when a package comes from a local path.
 
 ## What's in here
 
-| Extension             | Trigger                           | What it does                                                                           |
-| --------------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
-| `anthropic-extra`     | provider `anthropic-extra`        | A second Anthropic OAuth provider, so two Claude subscriptions can coexist             |
-| `ask-user`            | `ask_user` tool                   | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off  |
-| `btw`                 | `/btw`                            | Side-chat popover for a quick question that shouldn't derail the main thread           |
-| `commit`              | `/commit`, `/atomic-commit`       | Writes commit messages that match the repo's existing style                            |
-| `editor-enhancements` | editor, `@`, `!`, `alt+v`         | Custom editor: `@` file picker, shell completions, raw paste, cwd prompt history       |
-| `export-md`           | `/md`, `ctrl+shift+m`             | Renders the session to Markdown and opens it                                           |
-| `footer`              | TUI footer                        | Two-line footer: cwd, model, context/cost/tok-s, branch and changed files              |
-| `move-session`        | `/move-session [--family] <dir>`  | Moves the current session (or its whole family) to another cwd and relaunches pi there |
-| `pr-create`           | `/pr-create`                      | Auto-fills title, body and Linear, then a review menu before `git pr`                  |
-| `rtk`                 | bash rewriting                    | Rewrites bash calls through `rtk` to cut token usage on large outputs                  |
-| `sandbox`             | `/sandbox`, `--sandbox`           | Routes built-in tools into a Gondolin micro-VM with `cwd` mounted at `/workspace`      |
-| `save-md`             | `/save-md`                        | Saves the latest assistant response as a Markdown file                                 |
-| `session-recall`      | `session_search`, `session_query` | Searches past sessions with `rg` and has the `fast` model answer questions about one   |
-| `session-name`        | auto, `/rename`                   | Names the session (and Herdr pane title) after the first exchange; `/rename` redoes it |
-| `skill-autocomplete`  | `/skill:` anywhere                | Skill menu mid-message (`/skill:` auto, `/x` + Tab) and expands mid-message skills     |
-| `skill-toggle`        | `/toggle-skills`                  | Enables and disables skills from a picker instead of editing frontmatter               |
-| `spawn`               | `/spawn`                          | Opens a new pi session in a Herdr, Rex or Ghostty tab or split                         |
-| `split-fork`          | `/split-fork`                     | Forks the current session into a new tab or split, carrying the history over           |
-| `subq`                | classifier `subq/subq-snap-1.1`   | SubQ Snap decision model for codemode `classify()`, like Jev; needs `SUBQ_API_KEY`     |
-| `thinking-back`       | `alt+shift+t`                     | Cycles the thinking level backwards, since the built-in binding only goes forward      |
-| `web-tools`           | `webfetch`, `websearch` tools     | Web search and page fetching through Kagi, with markdown, text, html, and image output |
+| Extension               | Trigger                                         | What it does                                                                                        |
+| ----------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `anthropic-extra`       | provider `anthropic-extra`                      | A second Anthropic OAuth provider, so two Claude subscriptions can coexist                          |
+| `ask-user`              | `ask_user` tool                                 | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off               |
+| `commit`                | `/commit`, `/atomic-commit`, `ctrl+shift+c`/`a` | Writes commit messages that match the repo's existing style                                         |
+| `editor-enhancements`   | editor, `@`, `alt+v`                            | Custom editor: `@` file picker, raw paste, cwd prompt history                                       |
+| `export-md`             | `/export-md [path]`, `ctrl+shift+m`             | Renders the session to Markdown and opens it, or writes it to `path`                                |
+| `footer`                | TUI footer                                      | Two-line footer: cwd, model, context/cost, branch and diffstat incl. untracked files                |
+| `guardrails-classifier` | guardrails delegate                             | Lets `subq-snap-1.2` approve or block guardrails prompts; anything unsure still prompts             |
+| `pr-create`             | `/pr-create`                                    | Auto-fills title, body and Linear, then a review menu before `git pr`                               |
+| `rtk`                   | bash rewriting                                  | Rewrites bash calls through `rtk` and teaches the model `rtk recall`/`rtk bypass`                   |
+| `session-recall`        | `session_search`, `session_query`               | Searches past sessions with `rg` and has the `fast` model answer questions about one                |
+| `session-name`          | auto, `/rename`                                 | Names the session after the first exchange; `/rename` redoes it                                     |
+| `skill-autocomplete`    | `/skill:` anywhere                              | Skill menu mid-message (`/skill:` auto, `/x` + Tab) and expands mid-message skills                  |
+| `skill-toggle`          | `/toggle-skills [name]`                         | Enables and disables skills from a picker, or flips one by name                                     |
+| `split-fork`            | `/split-fork`                                   | Forks the current session into a new tab or split, carrying the history over                        |
+| `subq`                  | classifier `subq/subq-snap-1.2`                 | SubQ Snap decision models for codemode `classify()`, listed from `/v1/models`; needs `SUBQ_API_KEY` |
+| `thinking-back`         | `alt+shift+t`                                   | Cycles the thinking level backwards, since the built-in binding only goes forward                   |
+| `web-tools`             | `webfetch`, `websearch` tools                   | Web search and page fetching through Kagi, with markdown, text, html, and image output              |
 
-Some of these started as other people's code. `btw` and `split-fork` come from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `editor-enhancements` and `move-session` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` and `sandbox` started from examples in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
+Some of these started as other people's code. `split-fork` comes from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `guardrails-classifier` from [aliou/pi-guardrails](https://github.com/aliou/pi-guardrails/blob/main/examples/delegates/classifier.ts), `editor-enhancements` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` started from an example in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
 
 ## Layout
 
-The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` globs `extensions/*/index.ts` and `extensions/*/src/index.ts` under its `pi` key, so a new extension loads without editing it. `extensions/shared/` holds code imported by more than one extension and is not an extension itself; `shared/terminal.ts` opens tabs and splits through the `herdr` CLI when pi runs inside Herdr (`HERDR_ENV=1`) and through Ghostty AppleScript otherwise.
+The repo is an npm workspace. Extensions with dependencies or tests of their own get a `package.json` under `extensions/<name>/`, and everything else is a bare `index.ts`. The root `package.json` globs `extensions/*/index.ts` and `extensions/*/src/index.ts` under its `pi` key, so a new extension loads without editing it. `extensions/shared/` holds code imported by more than one extension and is not an extension itself.
 
 ## Models
 
