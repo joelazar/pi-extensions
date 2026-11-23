@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Block =
@@ -17,8 +17,11 @@ type Block =
 
 type Content = string | Block[];
 
-const fence = (lang: string, body: string) =>
-  "```" + lang + "\n" + body.replace(/\n+$/, "") + "\n```";
+const fence = (lang: string, body: string) => {
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((s) => s.length));
+  const ticks = "`".repeat(Math.max(3, longest + 1));
+  return ticks + lang + "\n" + body.replace(/\n+$/, "") + "\n" + ticks;
+};
 
 const details = (summary: string, body: string) =>
   `<details>\n<summary>${summary}</summary>\n\n${body}\n\n</details>`;
@@ -142,7 +145,7 @@ function openInEditor(ctx: any, file: string): Promise<void> {
   );
 }
 
-async function run(ctx: any): Promise<void> {
+async function run(ctx: any, args = ""): Promise<void> {
   if (!ctx.hasUI) {
     ctx.ui.notify("Requires interactive mode", "error");
     return;
@@ -153,6 +156,23 @@ async function run(ctx: any): Promise<void> {
     return;
   }
   const md = buildMarkdown(ctx);
+  const name = args.trim();
+  if (name) {
+    const file = resolve(ctx.cwd, name.endsWith(".md") ? name : `${name}.md`);
+    try {
+      writeFileSync(file, md, { encoding: "utf8", flag: "wx" });
+    } catch (error: any) {
+      ctx.ui.notify(
+        error?.code === "EEXIST"
+          ? `File already exists: ${file}`
+          : `Failed to write ${file}: ${error?.message ?? error}`,
+        "error",
+      );
+      return;
+    }
+    ctx.ui.notify(`Exported to ${file}`, "info");
+    return;
+  }
   const base =
     ctx.sessionManager
       .getSessionFile?.()
@@ -165,17 +185,11 @@ async function run(ctx: any): Promise<void> {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerCommand("md", {
-    description: "Export current session to markdown and open in $EDITOR",
-    handler: async (_args, ctx) => {
-      await run(ctx);
-    },
-  });
-
   pi.registerCommand("export-md", {
-    description: "Export current session to markdown and open in $EDITOR",
-    handler: async (_args, ctx) => {
-      await run(ctx);
+    description:
+      "Export session to markdown: open in $EDITOR, or write to a file (usage: /export-md [path])",
+    handler: async (args, ctx) => {
+      await run(ctx, args);
     },
   });
 
