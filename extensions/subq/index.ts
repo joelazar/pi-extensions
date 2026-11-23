@@ -1,42 +1,25 @@
-/**
- * SubQ Snap classifier provider.
- *
- * SubQ's Decisions API (POST /v1/systemone) speaks TypeSafe's System One protocol,
- * so this reuses pi-ai's System One transport. Only images differ: SubQ wants
- * `images: [{ mediaType, base64 }]` instead of data URLs.
- *
- * Usage (codemode), same as Jev:
- *   const snap = await models.getModelOfType("classifier", "subq", "subq-snap-1.2");
- *   await models.classify(snap, { state, questions });
- */
-import { existsSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
-import { join } from "node:path";
+import { findPackageJSON } from "node:module";
+import { realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { SystemOneTransport } from "@earendil-works/pi-ai/api/system-one-shared";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// pi's extension loader prefix-aliases "@earendil-works/pi-ai" to compat.js, which breaks
-// subpath imports. Load the file by path from pi's own node_modules instead.
-// shortcut: assumes pi-ai sits in a node_modules dir reachable from pi's cli.js; drop once pi fixes the alias.
+// pi's extension loader prefix-aliases "@earendil-works/pi-ai" to its extension view, which breaks subpath imports.
+// shortcut: loads pi's own pi-ai copy by file path, switch to a plain import once pi aliases subpaths.
 let systemOne: Promise<typeof import("@earendil-works/pi-ai/api/system-one-shared")> | undefined;
 function loadSystemOne() {
 	systemOne ??= (async () => {
-		const cli = realpathSync(process.argv[1]);
-		const rel = "@earendil-works/pi-ai/dist/api/system-one-shared.js";
-		const file = createRequire(cli)
-			.resolve.paths(rel)
-			?.map((dir) => join(dir, rel))
-			.find((f) => existsSync(f));
-		if (!file) throw new Error(`SubQ: cannot locate ${rel} from ${cli}`);
-		return import(pathToFileURL(file).href);
+		const pkg = findPackageJSON("@earendil-works/pi-ai", pathToFileURL(realpathSync(process.argv[1])));
+		if (!pkg) throw new Error("SubQ: cannot locate @earendil-works/pi-ai from pi's cli");
+		return import(pathToFileURL(join(dirname(pkg), "dist/api/system-one-shared.js")).href);
 	})();
 	return systemOne;
 }
 
 const API = "subq-system-one";
+const BASE_URL = "https://api.subq.ai/v1";
 
-/** Converts `data:<mime>;base64,<data>` URLs into SubQ's image objects. */
 export function toSubqImages(urls: string[]) {
 	return urls.map((url) => {
 		const match = /^data:([^;]+);base64,(.*)$/su.exec(url);
@@ -44,6 +27,21 @@ export function toSubqImages(urls: string[]) {
 		return { mediaType: match[1], base64: match[2] };
 	});
 }
+
+export function toModel({ id, name }: { id: string; name?: string }) {
+	return {
+		type: "classifier" as const,
+		id,
+		name: name ?? id,
+		api: API,
+		input: ["text" as const, "image" as const],
+		// Snap is $0.04 per 1M input tokens for every version; output is free.
+		cost: { input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 393216,
+	};
+}
+
+const fallbackModels = [toModel({ id: "subq-snap-1.2", name: "SubQ Snap 1.2" })];
 
 const transport: SystemOneTransport = {
 	api: API,
@@ -65,30 +63,16 @@ const transport: SystemOneTransport = {
 export default function (pi: ExtensionAPI) {
 	pi.registerProvider("subq", {
 		name: "SubQ",
-		baseUrl: "https://api.subq.ai/v1",
+		baseUrl: BASE_URL,
 		apiKey: "$SUBQ_API_KEY",
-		models: [
-			{
-				type: "classifier",
-				id: "subq-snap-1.1",
-				name: "SubQ Snap 1.1",
-				api: API,
-				input: ["text", "image"],
-				// $0.04 per 1M input tokens; output is free.
-				cost: { input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 393216,
-			},
-			{
-				type: "classifier",
-				id: "subq-snap-1.2",
-				name: "SubQ Snap 1.2",
-				api: API,
-				input: ["text", "image"],
-				// shortcut: price copied from 1.1, update once SubQ publishes 1.2 pricing.
-				cost: { input: 0.04, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 393216,
-			},
-		],
+		models: fallbackModels,
+		async refreshModels({ allowNetwork, signal }) {
+			if (!allowNetwork) return fallbackModels;
+			const response = await fetch(`${BASE_URL}/models`, { signal });
+			if (!response.ok) throw new Error(`SubQ /models returned ${response.status}`);
+			const { data } = (await response.json()) as { data: { id: string; name?: string }[] };
+			return data.map(toModel);
+		},
 		classifiers: {
 			[API]: { classify: async (model, context, options) =>
 					(await loadSystemOne()).classifySystemOne(transport, model, context, options), },
