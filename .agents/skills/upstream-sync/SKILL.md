@@ -12,7 +12,7 @@ Tracked extensions have a first-line header pinning the upstream file or directo
 // Source: https://github.com/<owner>/<repo>/tree/<sha>/<dir>
 ```
 
-Upstream clones live at `$(git config --global gj.root)/github.com/<owner>/<repo>` and are cloned with `gj get <owner>/<repo>`.
+Upstream clones live at `$(git config --global gj.root)/github.com/<owner>/<repo>` and are cloned with `git get <owner>/<repo>`.
 
 ## Steps
 

@@ -29,7 +29,7 @@ rg --no-heading --no-line-number -P -o -r '$1 $2 $3' "$pattern" \
 
         dir="$root/github.com/$repo"
         if [[ ! -d "$dir/.git" ]]; then
-            gj get "$repo" >/dev/null </dev/null
+            git get "$repo" >/dev/null </dev/null
         elif [[ $fetch == 1 && "$fetched" != *" $repo "* ]]; then
             git -C "$dir" fetch --quiet origin </dev/null
             fetched+="$repo "
