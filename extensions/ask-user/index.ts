@@ -35,6 +35,14 @@ const Params = Type.Object({
         "Between 2 and 5 answer options. A free-form 'write my own answer' option is always appended automatically - never include one yourself.",
     },
   ),
+  recommended: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      maximum: 5,
+      description:
+        "1-based index of the option you recommend. It is marked and preselected. Do not write 'recommended' into labels.",
+    }),
+  ),
 });
 
 type Outcome =
@@ -54,7 +62,7 @@ function describe(outcome: Outcome): string {
     case "dismissed":
       return "User dismissed the question without answering. Do not assume an answer; proceed accordingly or ask differently.";
     case "timeout":
-      return `No response after ${outcome.seconds}s — the user may be away from keyboard. A timeout is not approval or consent. Continue only with work that does not require user authorization; otherwise leave the action pending and re-ask later.`;
+      return `No response after ${outcome.seconds}s — the user may be away from keyboard. A timeout is not approval or consent. Continue only with work that does not require user authorization, then call ask_user again with this question once that work is done.`;
     case "custom":
       return `User wrote their own answer: ${outcome.answer}`;
     case "selected":
@@ -81,6 +89,7 @@ export default function askUser(pi: ExtensionAPI) {
     promptGuidelines: [
       "When asking the user a question whose likely answers can be enumerated, use the ask_user tool instead of asking in plain text.",
       "Ask one question per ask_user call; ask follow-up questions in subsequent calls.",
+      "Before asking the user to approve a draft, diff, message or ticket with ask_user, show it in full in your message first.",
     ],
     parameters: Params,
 
@@ -98,23 +107,19 @@ export default function askUser(pi: ExtensionAPI) {
         { label: OTHER_LABEL, description: undefined },
       ];
       const otherIndex = options.length - 1;
+      const recommended =
+        params.recommended && params.recommended <= params.options.length ? params.recommended - 1 : undefined;
 
       const outcome = await oneAtATime(async () => {
         if (signal?.aborted) return { kind: "cancelled" } as Outcome;
-        // ctx.ui.custom dialogs don't mark pi as blocked; the program-status and Herdr extensions pick this up.
-        pi.events.emit("herdr:blocked", { active: true, label: params.question, kind: "question" });
-        try {
-          return await showDialog();
-        } finally {
-          pi.events.emit("herdr:blocked", { active: false });
-        }
+        return showDialog();
       });
 
       return reply(outcome);
 
       function showDialog() {
         return ctx.ui.custom<Outcome>((tui, theme, _kb, done) => {
-          let cursor = 0;
+          let cursor = recommended ?? 0;
           let editing = false;
           let cached: string[] | undefined;
           let settled = false;
@@ -217,7 +222,7 @@ export default function askUser(pi: ExtensionAPI) {
               const isOther = i === otherIndex;
               const active = i === cursor || (isOther && editing);
               const prefix = i === cursor ? theme.fg("accent", " ❯ ") : "   ";
-              const label = `${isOther ? "✎" : `${i + 1}.`} ${opt.label}`;
+              const label = `${isOther ? "✎" : `${i + 1}.`} ${opt.label}${i === recommended ? " ★" : ""}`;
               add(prefix + theme.fg(active ? "accent" : isOther ? "muted" : "text", label));
               if (opt.description) add(`      ${theme.fg("muted", opt.description)}`);
             });
@@ -259,13 +264,15 @@ export default function askUser(pi: ExtensionAPI) {
               signal?.removeEventListener("abort", cancel);
             },
           };
-        });
+        }, { blocked: { kind: "question", message: params.question } });
       }
     },
 
     renderCall(args, theme) {
       const options = Array.isArray(args.options) ? args.options : [];
-      const numbered = options.map((o, i) => `${i + 1}. ${o.label}`).join("  ");
+      const numbered = options
+        .map((o, i) => `${i + 1}. ${o.label}${i + 1 === args.recommended ? " ★" : ""}`)
+        .join("  ");
       return new Text(
         theme.fg("toolTitle", theme.bold("ask_user ")) +
           theme.fg("muted", args.question ?? "") +
