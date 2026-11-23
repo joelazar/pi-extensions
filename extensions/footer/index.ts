@@ -1,17 +1,7 @@
-/**
- * Minimal two-line footer:
- *   cwd                                        provider/model · thinking
- *   ctx%/window · $cost                    branch · 3 files · +120/-40
- *
- * Extension statuses render below, one per line.
- *
- * Re-applied on a short delay so it wins over footers installed by other
- * extensions during session_start (notably pi-claude-code-use).
- */
-
 import { execFile } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { relative } from "node:path";
+import { join, relative } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -28,32 +18,68 @@ const GIT_TIMEOUT_MS = 3_000;
 const ROT_WARN_TOKENS = 100_000;
 const ROT_DEGRADED_TOKENS = 300_000;
 const ROT_LIMIT_PERCENT = 85;
-const FOOTER_CLAIM_DELAYS_MS = [0, 250, 1_000];
 
 type Diffstat = { files: number; insertions: number; deletions: number };
 
-function readDiffstat(cwd: string) {
-  return new Promise<Diffstat>((resolve) => {
-    execFile(
-      "git",
-      ["diff", "--numstat", "HEAD"],
-      { cwd, timeout: GIT_TIMEOUT_MS },
-      (error, stdout) => {
-        if (error) return resolve({ files: 0, insertions: 0, deletions: 0 });
-        let files = 0;
-        let insertions = 0;
-        let deletions = 0;
-        for (const line of stdout.split("\n")) {
-          if (!line.trim()) continue;
-          const [added, removed] = line.split("\t");
-          files += 1;
-          insertions += Number.parseInt(added, 10) || 0;
-          deletions += Number.parseInt(removed, 10) || 0;
-        }
-        resolve({ files, insertions, deletions });
-      },
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const UNTRACKED_MAX_FILES = 200;
+const UNTRACKED_MAX_BYTES = 1_000_000;
+
+function git(cwd: string, args: string[]) {
+  return new Promise<string | undefined>((resolve) => {
+    execFile("git", args, { cwd, timeout: GIT_TIMEOUT_MS }, (error, stdout) =>
+      resolve(error ? undefined : stdout),
     );
   });
+}
+
+export function parseNumstat(stdout: string): Diffstat {
+  let files = 0;
+  let insertions = 0;
+  let deletions = 0;
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [added, removed] = line.split("\t");
+    files += 1;
+    insertions += Number.parseInt(added, 10) || 0;
+    deletions += Number.parseInt(removed, 10) || 0;
+  }
+  return { files, insertions, deletions };
+}
+
+export function countLines(content: Buffer) {
+  if (content.length === 0 || content.includes(0)) return 0;
+  let lines = 0;
+  for (const byte of content) if (byte === 10) lines += 1;
+  return content[content.length - 1] === 10 ? lines : lines + 1;
+}
+
+async function untrackedLines(cwd: string, paths: string[]) {
+  let lines = 0;
+  // shortcut: counts lines of the first 200 untracked files under 1 MB, upgrade if big untracked trees show wrong totals
+  for (const path of paths.slice(0, UNTRACKED_MAX_FILES)) {
+    try {
+      const file = join(cwd, path);
+      if ((await stat(file)).size > UNTRACKED_MAX_BYTES) continue;
+      lines += countLines(await readFile(file));
+    } catch {}
+  }
+  return lines;
+}
+
+export async function readDiffstat(cwd: string): Promise<Diffstat> {
+  const head = await git(cwd, ["rev-parse", "--verify", "-q", "HEAD"]);
+  const [tracked, others] = await Promise.all([
+    git(cwd, ["diff", "--numstat", head ? "HEAD" : EMPTY_TREE]),
+    git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]),
+  ]);
+  const diffstat = parseNumstat(tracked ?? "");
+  const untracked = (others ?? "").split("\0").filter(Boolean);
+  return {
+    files: diffstat.files + untracked.length,
+    insertions: diffstat.insertions + (await untrackedLines(cwd, untracked)),
+    deletions: diffstat.deletions,
+  };
 }
 
 function rotColor(tokens: number | null, percent: number | null) {
@@ -113,14 +139,16 @@ const HIDDEN_STATUSES = new Set(["i-have-adhd", "ponytail"]);
 export default function footer(pi: ExtensionAPI) {
   let diffstat: Diffstat = { files: 0, insertions: 0, deletions: 0 };
   let requestRender: (() => void) | undefined;
-  let claimTimers: Array<ReturnType<typeof setTimeout>> = [];
+  let gitRequest = 0;
 
   async function refreshGit(ctx: ExtensionContext) {
+    const request = ++gitRequest;
     const next = await readDiffstat(ctx.cwd);
     if (
-      next.files === diffstat.files &&
-      next.insertions === diffstat.insertions &&
-      next.deletions === diffstat.deletions
+      request !== gitRequest ||
+      (next.files === diffstat.files &&
+        next.insertions === diffstat.insertions &&
+        next.deletions === diffstat.deletions)
     )
       return;
     diffstat = next;
@@ -138,16 +166,22 @@ export default function footer(pi: ExtensionAPI) {
       footerData: ReadonlyFooterDataProvider,
     ) => {
       requestRender = () => tui.requestRender();
+      const unsubscribeBranch = footerData.onBranchChange(
+        () => void refreshGit(ctx),
+      );
 
       return {
         invalidate() {},
+        dispose: unsubscribeBranch,
         render(width: number) {
           const model = ctx.model;
           const usage = ctx.getContextUsage();
           const contextPercent =
-            usage?.percent === undefined || usage?.percent === null
-              ? "?"
-              : `${Math.round(usage.percent)}`;
+            usage === undefined
+              ? "?%"
+              : usage.percent === null
+                ? "compacted"
+                : `${Math.round(usage.percent)}%`;
           const contextWindow =
             usage?.contextWindow ?? model?.contextWindow ?? 0;
           const subscription = model
@@ -156,7 +190,7 @@ export default function footer(pi: ExtensionAPI) {
           const cost = `$${sessionCost(ctx).toFixed(2)}${subscription ? " (sub)" : ""}`;
           const context = theme.fg(
             rotColor(usage?.tokens ?? null, usage?.percent ?? null),
-            `${contextPercent}%/${contextWindow > 0 ? formatTokens(contextWindow) : "?"}`,
+            `${contextPercent}/${contextWindow > 0 ? formatTokens(contextWindow) : "?"}`,
           );
           const stats = `${context}${theme.fg("muted", ` · ${cost}`)}`;
 
@@ -196,10 +230,6 @@ export default function footer(pi: ExtensionAPI) {
       };
     };
 
-    for (const timer of claimTimers) clearTimeout(timer);
-    claimTimers = FOOTER_CLAIM_DELAYS_MS.map((delay) =>
-      setTimeout(() => ctx.ui.setFooter(factory), delay),
-    );
     ctx.ui.setFooter(factory);
   });
 
@@ -218,8 +248,6 @@ export default function footer(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
-    for (const timer of claimTimers) clearTimeout(timer);
-    claimTimers = [];
     requestRender = undefined;
     if (ctx.mode === "tui") ctx.ui.setFooter(undefined);
   });
