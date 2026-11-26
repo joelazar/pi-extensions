@@ -21,25 +21,26 @@ pi install "$PWD"
 
 ## What's in here
 
-| Extension               | Trigger                                         | What it does                                                                                        |
-| ----------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `anthropic-extra`       | provider `anthropic-extra`                      | A second Anthropic OAuth provider, so two Claude subscriptions can coexist                          |
-| `ask-user`              | `ask_user` tool                                 | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off               |
-| `commit`                | `/commit`, `/atomic-commit`, `ctrl+shift+c`/`a` | Writes commit messages that match the repo's existing style                                         |
-| `editor-enhancements`   | editor, `@`, `alt+v`                            | Custom editor: `@` file picker, raw paste, cwd prompt history                                       |
-| `export-md`             | `/export-md [path]`, `ctrl+shift+m`             | Renders the session to Markdown and opens it, or writes it to `path`                                |
-| `footer`                | TUI footer                                      | Two-line footer: cwd, model, context/cost, branch and diffstat incl. untracked files                |
-| `guardrails-classifier` | guardrails delegate                             | Lets `subq-snap-1.2` approve or block guardrails prompts; anything unsure still prompts             |
-| `pr-create`             | `/pr-create`                                    | Auto-fills title, body and Linear, then a review menu before `git pr`                               |
-| `rtk`                   | bash rewriting                                  | Rewrites bash calls through `rtk` and teaches the model `rtk recall`/`rtk bypass`                   |
-| `session-recall`        | `session_search`, `session_query`               | Searches past sessions with `rg` and has the `fast` model answer questions about one                |
-| `session-name`          | auto, `/rename`                                 | Names the session after the first exchange; `/rename` redoes it                                     |
-| `skill-autocomplete`    | `/skill:` anywhere                              | Skill menu mid-message (`/skill:` auto, `/x` + Tab) and expands mid-message skills                  |
-| `skill-toggle`          | `/toggle-skills [name]`                         | Enables and disables skills from a picker, or flips one by name                                     |
-| `split-fork`            | `/split-fork`                                   | Forks the current session into a new tab or split, carrying the history over                        |
-| `subq`                  | classifier `subq/subq-snap-1.2`                 | SubQ Snap decision models for codemode `classify()`, listed from `/v1/models`; needs `SUBQ_API_KEY` |
-| `thinking-back`         | `alt+shift+t`                                   | Cycles the thinking level backwards, since the built-in binding only goes forward                   |
-| `web-tools`             | `webfetch`, `websearch` tools                   | Web search and page fetching through Kagi, with markdown, text, html, and image output              |
+| Extension               | Trigger                                         | What it does                                                                                           |
+| ----------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `anthropic-extra`       | provider `anthropic-extra`                      | A second Anthropic OAuth provider, so two Claude subscriptions can coexist                             |
+| `ask-user`              | `ask_user` tool                                 | Lets the model ask a multiple-choice question; `PI_ASK_USER_TIMEOUT` seconds, 0 = off                  |
+| `commit`                | `/commit`, `/atomic-commit`, `ctrl+shift+c`/`a` | Writes commit messages that match the repo's existing style                                            |
+| `editor-enhancements`   | editor, `@`, `alt+v`                            | Custom editor: `@` file picker, raw paste, cwd prompt history                                          |
+| `export-md`             | `/export-md [path]`, `ctrl+shift+m`             | Renders the session to Markdown and opens it, or writes it to `path`                                   |
+| `footer`                | TUI footer                                      | Two-line footer: cwd, model, context/cost, branch and diffstat incl. untracked files                   |
+| `guardrails-classifier` | guardrails delegate                             | Lets `subq-snap-1.2` approve or block guardrails prompts; anything unsure still prompts                |
+| `pr-create`             | `/pr-create`                                    | Auto-fills title, body and Linear, then a review menu before `git pr`                                  |
+| `rtk`                   | bash rewriting                                  | Rewrites bash calls through `rtk` and teaches the model `rtk recall`/`rtk bypass`                      |
+| `rex-resume`            | auto, inside Rex                                | Reports `pi --session` over OSC 7577 so Rex resumes pi after a restart; needs a `resume.trust.pi` rule |
+| `session-recall`        | `session_search`, `session_query`               | Searches past sessions with `rg` and has the `fast` model answer questions about one                   |
+| `session-name`          | auto, `/rename`                                 | Names the session after the first exchange; `/rename` redoes it                                        |
+| `skill-autocomplete`    | `/skill:` anywhere                              | Skill menu mid-message (`/skill:` auto, `/x` + Tab) and expands mid-message skills                     |
+| `skill-toggle`          | `/toggle-skills [name]`                         | Enables and disables skills from a picker, or flips one by name                                        |
+| `split-fork`            | `/split-fork`                                   | Forks the current session into a new tab or split, carrying the history over                           |
+| `subq`                  | classifier `subq/subq-snap-1.2`                 | SubQ Snap decision models for codemode `classify()`, listed from `/v1/models`; needs `SUBQ_API_KEY`    |
+| `thinking-back`         | `alt+shift+t`                                   | Cycles the thinking level backwards, since the built-in binding only goes forward                      |
+| `web-tools`             | `webfetch`, `websearch` tools                   | Web search and page fetching through Kagi, with markdown, text, html, and image output                 |
 
 Some of these started as other people's code. `split-fork` comes from [mitsuhiko/agent-stuff](https://github.com/mitsuhiko/agent-stuff), `guardrails-classifier` from [aliou/pi-guardrails](https://github.com/aliou/pi-guardrails/blob/main/examples/delegates/classifier.ts), `editor-enhancements` from [w-winter/dot314](https://github.com/w-winter/dot314), `ask-user` from [khoi/pi](https://github.com/khoi/pi), `session-name` from [danielcherubini/pi-archimedes](https://github.com/danielcherubini/pi-archimedes), `session-recall` from [ogulcancelik/pi-extensions](https://github.com/ogulcancelik/pi-extensions), and `anthropic-extra` started from an example in [pi-mono](https://github.com/earendil-works/pi-mono). Each one keeps a first-line `// Source:` permalink pinned to the upstream commit it was last synced with. `.agents/skills/upstream-sync/status.sh` lists the upstream commits since then, and the `upstream-sync` skill reviews them and proposes what to port.
 
