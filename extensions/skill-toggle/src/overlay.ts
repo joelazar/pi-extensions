@@ -140,8 +140,9 @@ function modeLabel(mode: SkillMode): string {
   return mode === "manual-only" ? "Manual-only" : "Agent-invocable";
 }
 
+// Every rendered row must be exactly one terminal line; descriptions from YAML block scalars contain newlines.
 function fit(text: string, width: number): string {
-  const truncated = truncateToWidth(text, Math.max(0, width));
+  const truncated = truncateToWidth(text.replace(/\s*[\r\n\t]\s*/g, " "), Math.max(0, width));
   return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
 }
 
