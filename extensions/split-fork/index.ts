@@ -31,7 +31,7 @@ export default function (pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const backend = detectTerminalBackend();
       if (!backend) {
-        ctx.ui.notify("/split-fork needs Rex (REX_SESSION) or macOS with Ghostty.", "warning");
+        ctx.ui.notify("/split-fork needs Rex (REX_BLOCK) or macOS with Ghostty.", "warning");
         return;
       }
       const sessionFile = ctx.sessionManager.getSessionFile();

@@ -53,7 +53,7 @@ const GHOSTTY_TAB_SCRIPT = `on run argv
 end run`;
 
 export function detectTerminalBackend(): TerminalBackend | undefined {
-  if (process.env.REX_SESSION) return "rex";
+  if (process.env.REX_BLOCK) return "rex";
   if (process.platform === "darwin") return "ghostty";
   return undefined;
 }
@@ -67,13 +67,14 @@ function failureReason(result: { stdout?: string; stderr?: string }, fallback: s
 }
 
 async function launchRex(pi: ExtensionAPI, req: LaunchRequest): Promise<void> {
-  const session = process.env.REX_SESSION!;
+  // A block ID stands for the session that holds it.
+  const session = process.env.REX_BLOCK!;
   const args =
     req.mode === "split"
       ? ["split", "-s", session, "--split=right", "-c", req.cwd, "--interactive"]
       : ["window", "new", "-s", session, "-c", req.cwd, "--interactive"];
   // Anchor the split on pi's own pane, not whatever pane has focus.
-  if (req.mode === "split" && process.env.REX_BLOCK) args.push("-b", process.env.REX_BLOCK);
+  if (req.mode === "split") args.push("-b", session);
   args.push("--", "sh", "-c", req.command);
   const result = await pi.exec("rex", args);
   if (result.code !== 0) {
