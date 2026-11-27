@@ -32,7 +32,6 @@ pi install "$PWD"
 | `guardrails-classifier` | guardrails delegate                             | Lets `subq-snap-1.2` approve or block guardrails prompts; anything unsure still prompts                |
 | `pr-create`             | `/pr-create`                                    | Auto-fills title, body and Linear, then a review menu before `git pr`                                  |
 | `rtk`                   | bash rewriting                                  | Rewrites bash calls through `rtk` and teaches the model `rtk recall`/`rtk bypass`                      |
-| `rex-resume`            | auto, inside Rex                                | Reports `pi --session` over OSC 7577 so Rex resumes pi after a restart; needs a `resume.trust.pi` rule |
 | `session-recall`        | `session_search`, `session_query`               | Searches past sessions with `rg` and has the `fast` model answer questions about one                   |
 | `session-name`          | auto, `/rename`                                 | Names the session after the first exchange; `/rename` redoes it                                        |
 | `skill-autocomplete`    | `/skill:` anywhere                              | Skill menu mid-message (`/skill:` auto, `/x` + Tab) and expands mid-message skills                     |
